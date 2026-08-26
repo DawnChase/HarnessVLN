@@ -28,12 +28,12 @@ SR 1、SPL 0.936、NE 0.067、OS 1，且无清理错误；紧凑 trace 见
 `docs/traces/dualvln-r2r-val-unseen-1.json`，完整 manifest 位于
 `runs/r2r_dualvln/manifest.json`。该 smoke 不代表 VLN-PE/VLNVerse 已完成真实 episode 验收。
 
-run-scope 另以连续两个 `val_unseen` episode 验证：环境按 Task 重建，DualVLN 从首个 Task
-到第二个 Task 始终为同一 worker PID `2048182`，checkpoint 只加载一次；两个 Task 分别
-执行 53/62 个动作，均 SR 1、OS 1，且均无 cleanup error。Bench 结束后 worker 和逐 job
-RGB-D 临时文件均已清理。紧凑 trace 见
-`docs/traces/dualvln-r2r-val-unseen-run-scope-2.json`，完整 manifest 位于
-`runs/r2r_dualvln_run_scope_two/manifest.json`。
+run-scope 已在固定前三个 `val_unseen` episode 上验证：环境逐 Task 重建，模型始终使用同一
+worker PID `3616771`，checkpoint 只加载一次；三例分别执行 53/62/62 个动作，聚合
+SR 1、SPL 0.910、NE 0.337、OS 1。Bench 结束后 worker 和逐 job RGB-D 文件均已清理。
+含完整压缩动作序列、terminal、最终 GPS/Compass pose 和源 manifest 哈希的 trace 见
+`docs/traces/dualvln-r2r-val-unseen-run-scope-3.json`，完整 manifest 位于
+`runs/r2r_dualvln_run_scope_three/manifest.json`。
 
 StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主 checkpoint revision 为
 `f1f76c66083c362ddfcd2610167f9c4e4a46c027`，四个 safetensors 分片覆盖索引中的
@@ -46,7 +46,12 @@ StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主
 VLN job，StreamVLN 主动执行 45 次 observe 和 44 个离散动作后输出 STOP，再由 Agent 调用
 `nav.goal.finish` 与 `nav.stop`。结果为 SR 1、SPL 1、NE 0.581、OS 1，且无清理错误；紧凑
 trace 见 `docs/traces/streamvln-r2r-val-unseen-1.json`，完整 manifest 位于
-`runs/r2r_streamvln/manifest.json`。该 smoke 不替代固定三例对照或完整 split 验收。
+`runs/r2r_streamvln/manifest.json`。
+
+固定前三例 run-scope 运行复用单一 worker PID `3427042`，动作数为 44/74/44，聚合
+SR 1、SPL 0.904、NE 1.138、OS 1；三例均保存最终 pose 且无 cleanup error，结束后 worker
+已退出。trace 见 `docs/traces/streamvln-r2r-val-unseen-run-scope-3.json`，完整 manifest 位于
+`runs/r2r_streamvln_run_scope_three/manifest.json`。
 
 JanusVLN Base 也已在该环境离线加载并完成单帧 RGB 推理。ModelScope checkpoint revision
 固定为 `33f932a4ea6bdc34afca9f5b79a8b4537cd02509`；四个分片的 SHA-256 与官方清单一致，
@@ -58,7 +63,19 @@ meta 参数为 0，测试输入生成 `TURN_RIGHT`。为保持官方 Transformer
 完整 Harness 链路也在同一 R2R-CE episode 1 验证：JanusVLN 主动执行 43 次 observe 和
 42 个动作后输出 STOP，Agent 再完成 goal 与 task。结果为 SR 1、SPL 1、NE 1.460、OS 1，
 无清理错误；紧凑 trace 见 `docs/traces/janusvln-r2r-val-unseen-1.json`，完整 manifest 位于
-`runs/r2r_janusvln/manifest.json`。该 smoke 同样不替代固定三例对照或完整 split 验收。
+`runs/r2r_janusvln/manifest.json`。
+
+固定前三例 run-scope 运行复用单一 worker PID `3468874`，动作数为 42/48/45，聚合
+SR 1、SPL 0.946、NE 1.292、OS 1；三例均保存最终 pose 且无 cleanup error，结束后 worker
+已退出。trace 见 `docs/traces/janusvln-r2r-val-unseen-run-scope-3.json`，完整 manifest 位于
+`runs/r2r_janusvln_run_scope_three/manifest.json`。
+
+上述三组是 Harness 真实运行证据，不是独立 evaluator parity。StreamVLN 和 DualVLN 本地
+没有对应三例的上游结果；JanusVLN 发布结果来自 Habitat 0.2.4、seed 42，而当前组合为
+Habitat 0.3.3、配置 seed 7，且逐例指标存在差异。上游结果也未保存已执行动作、terminal 或
+最终 pose。因此三个 trace 均标记 `official_evaluator_comparison: pending`，完整 split 和
+同版本官方 evaluator 对照仍未通过 release gate。trace 的 `habitat_episode` pose 是二维
+GPS 加 Compass yaw，不能直接与 MP3D world 坐标比较。
 
 Habitat-Sim/Lab 固定为 v0.3.3（Sim commit
 `acbe6f4922e68145e401e55c30f9dfea460a3f24`，Lab commit
@@ -79,8 +96,8 @@ HEADLESS=True WITH_BULLET=False CMAKE_BUILD_PARALLEL_LEVEL=32 \
 `val_unseen` episode 1 验证真实 reset、RGB-D render、navmesh、前进、转向与 stop。观测包含
 `640x480` RGB-D、GPS、Compass、标准 pose 和相机内参；前进一步为 0.25 m，左转为 15°。
 adapter 以 episode 内最小 geodesic distance 和 3 m 阈值补齐官方 OS 定义。该结果只确认
-Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
-分别验收。
+Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的独立 evaluator parity 仍按
+release gate 分别验收。
 
 Habitat ObjectNav 也使用同一 adapter，但保留独立 Bench 与 YAML。MP3D v1 和 HM3D v2
 validation 首个 shard episode 均已完成真实 reset、`640x480` RGB-D、ObjectGoal、GPS、

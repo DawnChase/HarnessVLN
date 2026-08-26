@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "source_manifest": "runs/r2r_streamvln_run_scope_three/manifest.json",
+  "source_manifest_sha256": "3e928e5f6f236e72c4c115a5f8c2d64954ffd169b4930b588445d66df424527f",
+  "created_at_unix": 1787780211.1053154,
+  "config_digest": "297f05e3e8514bfa84b977b1947758c3f94cb0e591e814eb0b3778d48763f2d2",
+  "model": "StreamVLN",
+  "checkpoint_revision": "f1f76c66083c362ddfcd2610167f9c4e4a46c027",
+  "validation_scope": "harness-real-run",
+  "official_evaluator_comparison": "pending",
+  "action_encoding": {
+    "F": "forward",
+    "L": "turn_left",
+    "R": "turn_right",
+    "S": "stop"
+  },
+  "lifecycle": {
+    "scope": "run",
+    "tasks": 3,
+    "observed_worker_pid": 3427042,
+    "worker_processes": 1,
+    "worker_exited_after_run": true
+  },
+  "aggregate_metrics": {
+    "sr": 1.0,
+    "spl": 0.9035433324976614,
+    "ne": 1.1375384132067363,
+    "os": 1.0
+  },
+  "records": [
+    {
+      "case_id": "r2r_ce:val_unseen:1",
+      "terminal_status": "completed",
+      "action_trace": "LLFFLFFFRFLLFFLFLFLFFLFFFFFFFFLFFFRFFFFLFFRFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -1.126286268234253,
+        "y": -6.0213303565979,
+        "z": 0.0,
+        "yaw": 2.0943949222564697
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 1.0,
+        "ne": 0.5811688303947449,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 45,
+        "nav.move.discrete": 44,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 11,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    },
+    {
+      "case_id": "r2r_ce:val_unseen:2",
+      "terminal_status": "completed",
+      "action_trace": "LLFFLFFFRFFFLLLLFLFRFLFRRFFFRFFFLLLLLLFFFRFFFFFFFFFFFFRFFFFFFRFFLFFRFLLLLFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -2.1133031845092773,
+        "y": -8.505655288696289,
+        "z": 0.0,
+        "yaw": 2.879793167114258
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 0.7106299974929841,
+        "ne": 2.1488430500030518,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 75,
+        "nav.move.discrete": 74,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 14,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    },
+    {
+      "case_id": "r2r_ce:val_unseen:3",
+      "terminal_status": "completed",
+      "action_trace": "LLFFLFFFRFFFLLLLFLFFFLFFFFFFFFFFFFFFFRFFLFRFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -0.7753657102584839,
+        "y": -6.31832218170166,
+        "z": 0.0,
+        "yaw": 1.8325955867767334
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 1.0,
+        "ne": 0.6826033592224121,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 45,
+        "nav.move.discrete": 44,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 9,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "source_manifest": "runs/r2r_janusvln_run_scope_three/manifest.json",
+  "source_manifest_sha256": "dfa6cb8ce2a0d836856ccf7fb649a946ebb0a7a104464a7c321107e46e62db20",
+  "created_at_unix": 1787780586.3785582,
+  "config_digest": "ba37639efdc143b88ba6e57799ca26dfcf8e390a1b22199d42b2278c0968abc5",
+  "model": "JanusVLN_Base",
+  "checkpoint_revision": "33f932a4ea6bdc34afca9f5b79a8b4537cd02509",
+  "validation_scope": "harness-real-run",
+  "official_evaluator_comparison": "pending",
+  "action_encoding": {
+    "F": "forward",
+    "L": "turn_left",
+    "R": "turn_right",
+    "S": "stop"
+  },
+  "lifecycle": {
+    "scope": "run",
+    "tasks": 3,
+    "observed_worker_pid": 3468874,
+    "worker_processes": 1,
+    "worker_exited_after_run": true
+  },
+  "aggregate_metrics": {
+    "sr": 1.0,
+    "spl": 0.9462486211669155,
+    "ne": 1.2922315796216328,
+    "os": 1.0
+  },
+  "records": [
+    {
+      "case_id": "r2r_ce:val_unseen:1",
+      "terminal_status": "completed",
+      "action_trace": "LLLFFFFFFRFLLFLFLLFFFFFFFLFFFFFFRFFFFFFFFFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -0.0631316527724266,
+        "y": -6.089173316955566,
+        "z": 0.0,
+        "yaw": 1.8325955867767334
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 1.0,
+        "ne": 1.4598493576049805,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 43,
+        "nav.move.discrete": 42,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 95,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    },
+    {
+      "case_id": "r2r_ce:val_unseen:2",
+      "terminal_status": "completed",
+      "action_trace": "LLLFFFRFLFFLFFFLLLFFFLFFFFFFFFFFFFFFFFFFFFFFFFFFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -1.9465422630310059,
+        "y": -7.9867730140686035,
+        "z": 0.0,
+        "yaw": 2.0943949222564697
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 0.8387458635007468,
+        "ne": 1.5576056241989136,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 49,
+        "nav.move.discrete": 48,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 105,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    },
+    {
+      "case_id": "r2r_ce:val_unseen:3",
+      "terminal_status": "completed",
+      "action_trace": "LLLFFFFFFRFLLFLFLLFLFLFFFFFFFRFFFRFFFFRFFFFFFS",
+      "final_pose": {
+        "frame": "habitat_episode",
+        "x": -0.5700871348381042,
+        "y": -6.472424507141113,
+        "z": 0.0,
+        "yaw": 1.5707961320877075
+      },
+      "metrics": {
+        "sr": 1.0,
+        "spl": 1.0,
+        "ne": 0.8592397570610046,
+        "os": 1.0
+      },
+      "event_counts": {
+        "nav.observe": 46,
+        "nav.move.discrete": 45,
+        "vln.navigate.start": 1,
+        "vln.navigate.status": 100,
+        "nav.goal.finish": 1,
+        "nav.stop": 1
+      },
+      "cleanup_errors": []
+    }
+  ]
+}
