@@ -42,7 +42,7 @@ for line in protocol_reader:
                 "ok": True,
                 "result": {
                     "protocol": params["protocol"],
-                    "model": params["model"],
+                    "model": "wrong-model" if "--wrong-model" in sys.argv else params["model"],
                 },
             }
         )

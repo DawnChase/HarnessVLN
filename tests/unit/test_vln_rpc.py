@@ -15,6 +15,8 @@ from vln.rpc import JsonLineProcess, RPCError, RPCVLNNavigator
 
 
 WORKER = Path(__file__).resolve().parents[1] / "fixtures" / "rpc_worker.py"
+SDK_WORKER = Path(__file__).resolve().parents[1] / "fixtures" / "sdk_worker.py"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_jsonl_worker_can_call_scoped_navigation_tools() -> None:
@@ -80,6 +82,45 @@ def test_rpc_navigator_runs_through_standard_job_tools(tmp_path) -> None:
     asyncio.run(scenario())
 
 
+def test_worker_sdk_runs_model_owned_navigation_loop(tmp_path) -> None:
+    class SDKNavigator(RPCVLNNavigator):
+        model_name = "sdk-fixture"
+        required_tools = frozenset({"nav.observe", "nav.move.discrete"})
+
+    async def scenario():
+        checkpoint = tmp_path / "checkpoint"
+        checkpoint.write_text("fixture")
+        goal = NavGoal("goal", "move to the target")
+        navigator = SDKNavigator(
+            (sys.executable, str(SDK_WORKER)),
+            upstream_root=tmp_path,
+            checkpoint=checkpoint,
+            env={"PYTHONPATH": str(ROOT / "src")},
+            request_timeout_s=1,
+        )
+        result = await NavigationHarness(timeout_s=2).run_task(
+            NavTask("sdk", goal),
+            NavigationStack(
+                PassthroughVLNAgent(poll_period_s=0),
+                DummyNavigationEnvironment((goal,), targets=(2,)),
+                vln=navigator,
+            ),
+        )
+
+        assert result.terminal.status == "completed"
+        assert result.environment["position"] == 2
+        assert [event.actor for event in result.audit if event.name == "nav.observe"] == [
+            "vln",
+            "vln",
+            "vln",
+        ]
+        assert [
+            event.name for event in result.audit if event.actor == "vln"
+        ].count("nav.move.discrete") == 2
+
+    asyncio.run(scenario())
+
+
 def test_model_stdout_and_stderr_are_isolated_from_protocol() -> None:
     async def scenario():
         bus = ToolBus()
@@ -123,6 +164,27 @@ def test_hello_timeout_reaps_process() -> None:
                 bus.client("vln", frozenset()), {"protocol": 1, "model": "x"}
             )
         assert process.returncode is not None
+
+    asyncio.run(scenario())
+
+
+def test_navigator_handshake_mismatch_reaps_process(tmp_path) -> None:
+    async def scenario():
+        checkpoint = tmp_path / "checkpoint"
+        checkpoint.write_text("fixture")
+        navigator = RPCVLNNavigator(
+            (sys.executable, str(WORKER), "--wrong-model"),
+            upstream_root=tmp_path,
+            checkpoint=checkpoint,
+            request_timeout_s=1,
+        )
+        bus = ToolBus()
+        with pytest.raises(RPCError, match="handshake mismatch"):
+            await navigator.start(
+                NavTask("mismatch", NavGoal("goal", "test")),
+                bus.client("vln", frozenset()),
+            )
+        assert navigator._process is None
 
     asyncio.run(scenario())
 

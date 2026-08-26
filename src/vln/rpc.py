@@ -361,10 +361,13 @@ class RPCVLNNavigator:
             await self._process.close()
             self._process = None
             raise
-        if hello.get("protocol") != self.protocol_version:
-            raise RPCError(f"worker protocol mismatch: {hello!r}")
-        if hello.get("model") != self.model_name:
-            raise RPCError(f"worker model mismatch: {hello!r}")
+        if (
+            hello.get("protocol") != self.protocol_version
+            or hello.get("model") != self.model_name
+        ):
+            await self._process.close()
+            self._process = None
+            raise RPCError(f"worker handshake mismatch: {hello!r}")
         return (
             Tool(
                 "vln.navigate.start",
