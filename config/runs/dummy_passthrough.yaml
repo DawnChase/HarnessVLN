@@ -1,0 +1,25 @@
+stack:
+  agent:
+    factory: agents.passthrough:PassthroughVLNAgent
+    params:
+      poll_period_s: 0.0
+  environment:
+    factory: envs.dummy:from_case
+  vln:
+    factory: vln.dummy:DummyVLNNavigator
+    params:
+      max_steps: 100
+      inference_period_s: 0.0
+  memory: null
+runner:
+  parallelism: 2
+  timeout_s: 10
+  shutdown_timeout_s: 2
+  seed: 7
+output:
+  root: runs/dummy_passthrough
+provenance:
+  simulator: dummy
+  dataset: embedded-smoke-v1
+  checkpoint: none
+  upstream_commit: none

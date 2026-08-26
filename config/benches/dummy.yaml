@@ -1,0 +1,11 @@
+benchmark:
+  factory: benches.dummy:DummyBenchmark
+  params:
+    split: smoke
+    cases:
+      - task_id: forward
+        instruction: Move to the marker ahead.
+        target: 3
+      - task_id: backward
+        instruction: Move to the marker behind.
+        target: -2

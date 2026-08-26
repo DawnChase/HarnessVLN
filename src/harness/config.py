@@ -45,6 +45,7 @@ CONFIG_SCHEMA = {
             "additionalProperties": False,
         },
         "output": {"type": "object"},
+        "provenance": {"type": "object"},
     },
     "required": ["benchmark", "stack", "runner"],
     "additionalProperties": False,

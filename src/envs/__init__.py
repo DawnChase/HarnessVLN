@@ -1,3 +1,3 @@
-from envs.dummy import DummyNavigationEnvironment
+from envs.dummy import DummyNavigationEnvironment, from_case
 
-__all__ = ["DummyNavigationEnvironment"]
+__all__ = ["DummyNavigationEnvironment", "from_case"]
