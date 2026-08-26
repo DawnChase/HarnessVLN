@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from vln.dualvln_worker import (
+from vln.dualvln.worker import (
     DualVLNBackend,
     NativeDualPolicy,
     _require_action,
@@ -256,7 +256,7 @@ def test_native_dual_loader_uses_internnav_agent_contract(
         "internnav.model.basemodel.internvla_n1.internvla_n1_arch": architecture,
     }
     monkeypatch.setattr(
-        "vln.dualvln_worker.importlib.import_module", lambda name: modules[name]
+        "vln.dualvln.worker.importlib.import_module", lambda name: modules[name]
     )
 
     settings = NativeDualPolicy().load(

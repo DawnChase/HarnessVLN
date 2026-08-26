@@ -4,7 +4,7 @@ import threading
 
 import numpy as np
 
-from vln.janusvln_worker import JanusVLNBackend, sample_history_indices
+from vln.janusvln.worker import JanusVLNBackend, sample_history_indices
 
 
 class Policy:

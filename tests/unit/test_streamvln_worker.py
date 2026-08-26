@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from vln.streamvln_worker import (
+from vln.streamvln.worker import (
     NativeStreamFrame,
     NativeStreamPolicy,
     StreamVLNBackend,
@@ -260,7 +260,7 @@ def test_native_stream_loader_uses_separate_tokenizer_and_exact_model_options(
         "depth_camera_filtering": SimpleNamespace(filter_depth=lambda value, **_: value),
     }
     monkeypatch.setattr(
-        "vln.streamvln_worker.importlib.import_module", lambda name: modules[name]
+        "vln.streamvln.worker.importlib.import_module", lambda name: modules[name]
     )
 
     policy = NativeStreamPolicy()
