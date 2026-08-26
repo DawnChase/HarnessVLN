@@ -4,6 +4,7 @@ import asyncio
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from agents import PassthroughVLNAgent
@@ -88,6 +89,14 @@ def test_worker_sdk_runs_model_owned_navigation_loop(tmp_path) -> None:
         required_tools = frozenset({"nav.observe", "nav.move.discrete"})
 
     async def scenario():
+        class ArrayEnvironment(DummyNavigationEnvironment):
+            async def _observe(self, actor, arguments):
+                observation = await super()._observe(actor, arguments)
+                observation["channels"]["rgb"] = np.arange(
+                    12, dtype=np.uint8
+                ).reshape(2, 2, 3)
+                return observation
+
         checkpoint = tmp_path / "checkpoint"
         checkpoint.write_text("fixture")
         goal = NavGoal("goal", "move to the target")
@@ -102,7 +111,7 @@ def test_worker_sdk_runs_model_owned_navigation_loop(tmp_path) -> None:
             NavTask("sdk", goal),
             NavigationStack(
                 PassthroughVLNAgent(poll_period_s=0),
-                DummyNavigationEnvironment((goal,), targets=(2,)),
+                ArrayEnvironment((goal,), targets=(2,)),
                 vln=navigator,
             ),
         )

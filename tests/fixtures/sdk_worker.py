@@ -13,6 +13,10 @@ class FixtureBackend:
         del options
         while not cancelled.is_set():
             observation = tools.observe()
+            rgb = observation["channels"].get("rgb")
+            if rgb is not None:
+                assert rgb.shape == (2, 2, 3)
+                assert int(rgb[1, 1, 2]) == 11
             delta = observation["channels"]["target_delta"]
             if delta == 0:
                 return f"completed: {instruction}"
