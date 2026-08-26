@@ -10,6 +10,7 @@ stack:
           - +habitat/task/lab_sensors=[gps_sensor,compass_sensor]
         config_values:
           habitat.environment.max_episode_steps: 500
+          habitat.task.measurements.success.success_distance: 3.0
           habitat.dataset.split: val_unseen
           habitat.dataset.data_path: data/datasets/r2r/{split}/{split}.json.gz
           habitat.dataset.scenes_dir: data/scene_datasets

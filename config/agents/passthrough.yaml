@@ -2,5 +2,4 @@ stack:
   agent:
     factory: agents.passthrough:PassthroughVLNAgent
     params:
-      poll_period_s: 0.01
-
+      poll_period_s: 0.1

@@ -122,6 +122,12 @@ def test_full_r2r_run_configs_satisfy_model_requirements(
     )
     assert resolved.data["runner"]["parallelism"] == 1
     assert "max_cases" not in resolved.data["runner"]
+    assert (
+        resolved.data["stack"]["environment"]["params"]["native_factory_params"][
+            "config_values"
+        ]["habitat.task.measurements.success.success_distance"]
+        == 3.0
+    )
 
 
 def test_smoke_override_bounds_a_full_model_run() -> None:

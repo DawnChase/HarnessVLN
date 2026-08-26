@@ -27,6 +27,12 @@ StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主
 `(turn_right, turn_right, turn_right, turn_right)`。运行参数见
 `config/vln/streamvln.yaml`。
 
+完整 Harness 链路另在 R2R-CE `val_unseen` episode 1 验证：Passthrough Agent 启动一次
+VLN job，StreamVLN 主动执行 45 次 observe 和 44 个离散动作后输出 STOP，再由 Agent 调用
+`nav.goal.finish` 与 `nav.stop`。结果为 SR 1、SPL 1、NE 0.581、OS 1，且无清理错误；紧凑
+trace 见 `docs/traces/streamvln-r2r-val-unseen-1.json`，完整 manifest 位于
+`runs/r2r_streamvln/manifest.json`。该 smoke 不替代固定三例对照或完整 split 验收。
+
 JanusVLN Base 也已在该环境离线加载并完成单帧 RGB 推理。ModelScope checkpoint revision
 固定为 `33f932a4ea6bdc34afca9f5b79a8b4537cd02509`；四个分片的 SHA-256 与官方清单一致，
 2068 个 tensor 完整覆盖索引。实际模型包含 9,314,832,390 个参数和 24 层 VGGT，残留
