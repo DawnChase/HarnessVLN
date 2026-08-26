@@ -20,5 +20,12 @@ MAX_JOBS=8 python -m pip install flash-attn==2.8.3 --no-build-isolation
 会构造不兼容的 `384x1536` 层。当前已验证 Python 3.10.20、Torch 2.8.0+cu128、
 FlashAttention 2.8.3，且 DualVLN 四个权重分片加载完成、残留 meta 参数为 0。
 
+StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主 checkpoint revision 为
+`f1f76c66083c362ddfcd2610167f9c4e4a46c027`，四个 safetensors 分片覆盖索引中的
+764 个 tensor；SigLIP revision 为 `9fdffc58afc957d1a03a25b10dba0329ab15c2a3`。
+实际构造得到 8,030,345,248 个参数、残留 meta 参数为 0，测试输入解析出动作
+`(turn_right, turn_right, turn_right, turn_right)`。运行参数见
+`config/vln/streamvln.yaml`。
+
 Habitat、AI2-THOR 和 Isaac Sim SDK 后续也只加入 `harnessvln`；加入一种 SDK 后必须重新
 执行 `pip check`、全量单测及对应模拟器 smoke test，配置文件同步追加精确版本。

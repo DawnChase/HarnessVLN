@@ -190,6 +190,10 @@ def test_native_stream_loader_uses_separate_tokenizer_and_exact_model_options(
     source_root = upstream / "streamvln"
     (source_root / "model").mkdir(parents=True)
     checkpoint = tmp_path / "checkpoint"
+    tokenizer_path = tmp_path / "qwen-tokenizer"
+    tokenizer_path.mkdir()
+    vision_tower_path = tmp_path / "siglip-so400m-patch14-384"
+    vision_tower_path.mkdir()
     calls = {}
 
     class Loader:
@@ -198,7 +202,10 @@ def test_native_stream_loader_uses_separate_tokenizer_and_exact_model_options(
             calls.setdefault(cls.__name__, []).append((path, kwargs))
             if cls is Tokenizer:
                 return FakeTokenizer()
-            return "config"
+            return SimpleNamespace(
+                mm_vision_tower="google/siglip-so400m-patch14-384",
+                vision_tower="google/siglip-so400m-patch14-384",
+            )
 
     class Tokenizer(Loader):
         pass
@@ -268,19 +275,22 @@ def test_native_stream_loader_uses_separate_tokenizer_and_exact_model_options(
         upstream,
         checkpoint,
         {
-            "tokenizer_path": "/tokenizers/qwen",
+            "tokenizer_path": str(tokenizer_path),
+            "vision_tower_path": str(vision_tower_path),
             "device": "cuda:2",
             "num_history": 12,
         },
     )
 
-    assert calls["Tokenizer"][0][0] == "/tokenizers/qwen"
+    assert calls["Tokenizer"][0][0] == str(tokenizer_path)
     assert calls["Config"][0][0] == checkpoint
     model_path, model_kwargs = calls["model"]
     assert model_path == checkpoint
     assert model_kwargs["attn_implementation"] == "flash_attention_2"
     assert model_kwargs["torch_dtype"] == "bf16"
     assert model_kwargs["low_cpu_mem_usage"] is False
+    assert model_kwargs["config"].mm_vision_tower == str(vision_tower_path)
+    assert model_kwargs["config"].vision_tower == str(vision_tower_path)
     assert model.model.num_history == 12
     assert model.reset_count == 1
     assert model.device == "cuda:2"

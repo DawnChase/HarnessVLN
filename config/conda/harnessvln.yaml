@@ -9,6 +9,7 @@ dependencies:
       - accelerate==1.4.0
       - addict==2.4.0
       - diffusers==0.32.2
+      - depth-camera-filtering @ git+https://github.com/naokiyokoyama/depth_camera_filtering.git@39d6e2f391c8b2198a67ad96f94bf6da0acd48a0
       - einops==0.6.1
       - fastapi==0.110.0
       - ftfy==6.3.1

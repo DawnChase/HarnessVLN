@@ -186,6 +186,18 @@ class NativeStreamPolicy:
         tokenizer_path = options.get("tokenizer_path")
         if not isinstance(tokenizer_path, str) or not tokenizer_path:
             raise ValueError("StreamVLN worker requires a non-empty tokenizer_path")
+        vision_tower_path = options.get("vision_tower_path")
+        if not isinstance(vision_tower_path, str) or not vision_tower_path:
+            raise ValueError("StreamVLN worker requires a non-empty vision_tower_path")
+        local_only = bool(options.get("local_files_only", True))
+        if local_only and not Path(tokenizer_path).is_dir():
+            raise FileNotFoundError(
+                f"StreamVLN tokenizer directory not found: {tokenizer_path}"
+            )
+        if local_only and not Path(vision_tower_path).is_dir():
+            raise FileNotFoundError(
+                f"StreamVLN vision tower directory not found: {vision_tower_path}"
+            )
         sys.path.insert(0, str(upstream_root))
         sys.path.insert(0, str(source_root))
         torch = importlib.import_module("torch")
@@ -204,7 +216,6 @@ class NativeStreamPolicy:
             )
         pil_image = importlib.import_module("PIL.Image")
         filtering = importlib.import_module("depth_camera_filtering")
-        local_only = bool(options.get("local_files_only", True))
         model_max_length = _positive_int(
             options.get("model_max_length", 4096), "model_max_length"
         )
@@ -225,6 +236,8 @@ class NativeStreamPolicy:
         config = transformers.AutoConfig.from_pretrained(
             checkpoint, local_files_only=local_only
         )
+        config.mm_vision_tower = vision_tower_path
+        config.vision_tower = vision_tower_path
         self.model = modeling.StreamVLNForCausalLM.from_pretrained(
             checkpoint,
             attn_implementation="flash_attention_2",
