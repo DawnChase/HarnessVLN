@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -14,6 +15,14 @@ from schemas import EnvironmentTerminal, MotionProfile, NavigationProfile, Obser
 
 
 NativeFactory = Callable[[BenchmarkCase], Any]
+
+
+class _GymRegistryCompat(dict[Any, Any]):
+    """Expose the pre-0.26 registry attribute expected by Habitat-Lab 0.3.3."""
+
+    @property
+    def env_specs(self) -> "_GymRegistryCompat":
+        return self
 
 
 class HabitatEnvironment:
@@ -278,17 +287,24 @@ def create_native_session(
     case: BenchmarkCase,
     *,
     config_path: str | Path,
-    config_loader: str,
+    config_loader: str = "envs.habitat:load_habitat_config",
     config_options: Sequence[Any] | None = None,
+    config_values: Mapping[str, Any] | None = None,
+    source_root: str | Path | None = None,
 ) -> Any:
     """Create a one-episode Habitat session inside a Habitat-enabled process."""
 
+    if source_root is not None:
+        _prepend_habitat_sources(source_root)
+    ensure_habitat_gym_compat()
     try:
         import habitat
     except ImportError as error:
         raise HarnessError("Habitat adapter requires habitat-lab and habitat-sim") from error
     loader = load_symbol(config_loader)
     config = loader(str(config_path), list(config_options or ()))
+    if config_values:
+        _update_habitat_config(config, config_values)
     task_config = getattr(config, "TASK_CONFIG", None)
     if task_config is not None:
         dataset_config = task_config.DATASET
@@ -307,8 +323,7 @@ def create_native_session(
         if str(episode.episode_id) == episode_id
         and (
             case.task.scene_id is None
-            or str(episode.scene_id).replace("//", "/")
-            == case.task.scene_id.replace("//", "/")
+            or _same_scene(str(episode.scene_id), case.task.scene_id)
         )
     ]
     if len(matches) != 1:
@@ -317,3 +332,65 @@ def create_native_session(
         )
     dataset.episodes = matches
     return habitat.Env(config=env_config, dataset=dataset)
+
+
+def load_habitat_config(config_path: str, config_options: Sequence[Any]) -> Any:
+    """Load a Habitat-Lab 0.3.x Hydra config without leaking Hydra into callers."""
+
+    import habitat
+
+    return habitat.get_config(
+        config_path=config_path,
+        overrides=[str(option) for option in config_options],
+    )
+
+
+def ensure_habitat_gym_compat() -> None:
+    """Bridge Habitat-Lab 0.3.3's registry lookup to Gym 0.26."""
+
+    try:
+        import gym
+        from gym.envs import registration
+    except ImportError as error:
+        raise HarnessError("Habitat adapter requires gym") from error
+    registry = registration.registry
+    if isinstance(registry, dict) and not hasattr(registry, "env_specs"):
+        compatible = _GymRegistryCompat(registry)
+        registration.registry = compatible
+        gym.envs.registry = compatible
+
+
+def _prepend_habitat_sources(source_root: str | Path) -> None:
+    root = Path(source_root).expanduser().resolve()
+    habitat_lab = root / "habitat-lab" if (root / "habitat-lab").is_dir() else root
+    if not (habitat_lab / "habitat").is_dir():
+        raise HarnessError(f"Habitat-Lab source package not found under: {root}")
+    candidates = [habitat_lab]
+    baselines = root / "habitat-baselines"
+    if baselines.is_dir():
+        candidates.append(baselines)
+    for candidate in reversed(candidates):
+        value = str(candidate)
+        if value not in sys.path:
+            sys.path.insert(0, value)
+
+
+def _update_habitat_config(config: Any, values: Mapping[str, Any]) -> None:
+    try:
+        from habitat.config import read_write
+        from omegaconf import OmegaConf
+    except ImportError as error:
+        raise HarnessError("Habitat config overrides require OmegaConf") from error
+    with read_write(config):
+        for path, value in values.items():
+            OmegaConf.update(config, path, value, merge=False)
+
+
+def _same_scene(actual: str, expected: str) -> bool:
+    actual_path = actual.replace("\\", "/").replace("//", "/").rstrip("/")
+    expected_path = expected.replace("\\", "/").replace("//", "/").rstrip("/")
+    return (
+        actual_path == expected_path
+        or actual_path.endswith(f"/{expected_path.lstrip('/')}")
+        or expected_path.endswith(f"/{actual_path.lstrip('/')}")
+    )

@@ -5,7 +5,7 @@ import asyncio
 import numpy as np
 
 from benches.base import BenchmarkCase
-from envs.habitat import HabitatEnvironment
+from envs.habitat import HabitatEnvironment, _same_scene
 from harness import NavigationHarness, NavigationStack
 from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
@@ -125,3 +125,12 @@ def test_habitat_profile_does_not_claim_undeclared_channels() -> None:
     )
 
     assert environment.profile.observation_channels == frozenset({"rgb"})
+
+
+def test_habitat_scene_matching_accepts_dataset_resolved_paths() -> None:
+    relative = "mp3d/zsNo4HB9uLZ/zsNo4HB9uLZ.glb"
+    absolute = f"/datasets/scene_datasets/{relative}"
+
+    assert _same_scene(absolute, relative)
+    assert _same_scene(relative, absolute)
+    assert not _same_scene(absolute, "mp3d/other/other.glb")

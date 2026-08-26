@@ -27,4 +27,6 @@ src/
 
 `harness/` 不依赖具体插件；新增实现只修改所属目录、配置和测试。兼容矩阵见 [v0.1-target.md](v0.1-target.md)。
 
-当前 Habitat、THOR、Isaac 均完成 mock contract；本机未安装对应 runtime，因此真实 reset/render/physics 与官方 metric parity 仍是 release gate，不能标记为 native verified。
+Habitat-Sim/Lab 0.3.3 已在统一环境完成真实 R2R reset、RGB-D render 与动作 smoke；完整
+split 和官方 metric parity 仍是 release gate。THOR、Isaac 当前仅完成 mock contract，
+安装对应 runtime 并验证真实 reset/render/physics 前保持未验证状态。

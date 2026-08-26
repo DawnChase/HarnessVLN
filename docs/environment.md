@@ -34,5 +34,23 @@ meta 参数为 0，测试输入生成 `TURN_RIGHT`。为保持官方 Transformer
 行为，统一环境中的 adapter 显式设置 `use_fast=False`；运行参数见
 `config/vln/janusvln.yaml`。
 
-Habitat、AI2-THOR 和 Isaac Sim SDK 后续也只加入 `harnessvln`；加入一种 SDK 后必须重新
-执行 `pip check`、全量单测及对应模拟器 smoke test，配置文件同步追加精确版本。
+Habitat-Sim/Lab 固定为 v0.3.3（Sim commit
+`acbe6f4922e68145e401e55c30f9dfea460a3f24`，Lab commit
+`094d6be2f9d057e4781a68ae792132895fd4d3d0`）。Sim 以 headless、无 Bullet 模式从源码编译；
+Lab/Baselines 从固定提交源码加载，避免它的旧 `gym<0.23.1` 包元数据破坏统一环境。Harness
+在 adapter 边界兼容 Lab 0.3.3 使用的旧 registry 访问，环境仍保留 `gym==0.26.2`：
+
+```bash
+git clone --recursive --branch v0.3.3 https://github.com/facebookresearch/habitat-sim \
+  cache/upstream/habitat_sim
+git clone --branch v0.3.3 https://github.com/facebookresearch/habitat-lab \
+  cache/upstream/habitat_lab
+HEADLESS=True WITH_BULLET=False CMAKE_BUILD_PARALLEL_LEVEL=32 \
+  python -m pip install cache/upstream/habitat_sim --no-build-isolation
+```
+
+已在 MP3D R2R `val_unseen` episode 1 验证真实 reset、RGB-D render、navmesh、前进和转向：
+RGB 为 `480x640x3`，Depth 为 `480x640x1`，前进一步位移约 0.25 m。该结果只确认
+Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
+分别验收。AI2-THOR 和 Isaac Sim SDK 也只加入 `harnessvln`；加入后重新执行 `pip check`、
+全量单测及对应模拟器 smoke test，并同步固定版本。
