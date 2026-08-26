@@ -20,6 +20,13 @@ MAX_JOBS=8 python -m pip install flash-attn==2.8.3 --no-build-isolation
 会构造不兼容的 `384x1536` 层。当前已验证 Python 3.10.20、Torch 2.8.0+cu128、
 FlashAttention 2.8.3，且 DualVLN 四个权重分片加载完成、残留 meta 参数为 0。
 
+DualVLN 的完整 Harness 链路已在 R2R-CE `val_unseen` episode 1 验证。专用环境 overlay
+提供 -30° RGB-D 与不触发原生 STOP 的 `stand_still`；模型保留内部 System 1/System 2
+异步循环，共执行 54 次 observe、53 个逻辑动作（含 7 次 stand-still）后停止。结果为
+SR 1、SPL 0.936、NE 0.067、OS 1，且无清理错误；紧凑 trace 见
+`docs/traces/dualvln-r2r-val-unseen-1.json`，完整 manifest 位于
+`runs/r2r_dualvln/manifest.json`。该 smoke 不代表 VLN-PE/VLNVerse 已完成真实 episode 验收。
+
 StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主 checkpoint revision 为
 `f1f76c66083c362ddfcd2610167f9c4e4a46c027`，四个 safetensors 分片覆盖索引中的
 764 个 tensor；SigLIP revision 为 `9fdffc58afc957d1a03a25b10dba0329ab15c2a3`。
