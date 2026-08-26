@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+import numpy as np
+
 from benches.base import BenchmarkCase
 from envs.habitat import HabitatEnvironment
 from harness import NavigationHarness, NavigationStack
+from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
+from vln import StreamVLNNavigator
 
 
 class FakeHabitatSession:
@@ -60,7 +64,7 @@ def test_habitat_compound_task_keeps_one_native_session() -> None:
         async def run(self, context):
             first = await context.nav.observe()
             assert first["channels"]["rgb"] == "rgb-frame"
-            assert first["channels"]["camera_intrinsics"] == [1.0, 2.0, 3.0]
+            assert np.array_equal(first["channels"]["camera_intrinsics"], np.eye(4))
             assert first["channels"]["pose"]["frame"] == "habitat_episode"
             assert "private_metric" not in first["channels"]
 
@@ -85,10 +89,16 @@ def test_habitat_compound_task_keeps_one_native_session() -> None:
             fixture,
             native_factory=lambda _: session,
             goal_finish_action="SUBTASK_STOP",
-            static_channels={"camera_intrinsics": [1.0, 2.0, 3.0]},
+            static_channels={"camera_intrinsics": np.eye(4)},
+            camera={"height": 480, "width": 640, "hfov_deg": 79},
         )
         assert environment.profile.observation_channels == frozenset(
             {"rgb", "depth", "gps", "compass", "pose", "camera_intrinsics"}
+        )
+        check_navigation_requirements(
+            "StreamVLNNavigator",
+            StreamVLNNavigator.requirements,
+            environment.profile,
         )
 
         result = await NavigationHarness(timeout_s=1).run_task(

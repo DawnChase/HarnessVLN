@@ -14,4 +14,5 @@ class StreamVLNNavigator(RPCVLNNavigator):
             "forward_m": 0.25,
             "turn_deg": 15.0,
         },
+        "camera": {"height": 480, "width": 640, "hfov_deg": 79},
     }

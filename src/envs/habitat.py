@@ -34,6 +34,7 @@ class HabitatEnvironment:
         expose_pose: bool = True,
         forward_m: float = 0.25,
         turn_deg: float = 15.0,
+        camera: Mapping[str, Any] | None = None,
     ) -> None:
         self.case = case
         self.native_factory = native_factory
@@ -58,6 +59,7 @@ class HabitatEnvironment:
                 forward_m=forward_m,
                 turn_deg=turn_deg,
             ),
+            camera=dict(camera or {}),
         )
         self._session: Any = None
         self._observation: Mapping[str, Any] = {}
