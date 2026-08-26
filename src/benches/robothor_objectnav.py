@@ -55,6 +55,7 @@ class RoboTHORObjectNavBenchmark:
                     {"category": category},
                 )
                 setup = {
+                    "episode_id": raw["id"],
                     "scene": raw["scene"],
                     "initial_position": raw["initial_position"],
                     "initial_orientation": raw["initial_orientation"],

@@ -60,6 +60,7 @@ def case() -> BenchmarkCase:
         "robothor:fixture",
         task,
         {
+            "episode_id": "FloorPlan_Val1_1_AlarmClock_0",
             "scene": "FloorPlan_Val1_1",
             "initial_position": {"x": 1.0, "y": 0.9, "z": 0.0},
             "initial_orientation": 30,
@@ -110,7 +111,7 @@ def test_robothor_maps_reset_observe_actions_stop_and_result() -> None:
         controller = FakeController.instances[-1]
         assert controller.scene == "FloorPlan_Val1_1"
         assert controller.initialization_parameters["robothorChallengeEpisodeId"] == (
-            "robothor:fixture"
+            "FloorPlan_Val1_1_AlarmClock_0"
         )
         assert [action for action, _ in controller.actions] == [
             "TeleportFull",
@@ -153,6 +154,12 @@ def test_robothor_optional_depth_pose_and_feedback_are_declared() -> None:
         assert environment.profile.observation_channels == frozenset(
             {"rgb", "depth", "pose", "object_goal"}
         )
+        assert environment.profile.camera == {
+            "height": 480,
+            "width": 640,
+            "hfov_deg": 79.0,
+            "vfov_deg": 63.453048374758716,
+        }
         result = await NavigationHarness(timeout_s=1).run_task(
             fixture.task,
             NavigationStack(Agent(), environment),

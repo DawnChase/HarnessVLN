@@ -64,5 +64,8 @@ def test_robothor_val_real_data_contract() -> None:
     assert len({case.case_id for case in cases}) == 1800
     assert len(categories) == 12
     assert all(case.task.goal.instruction.startswith("Find the ") for case in cases)
+    assert all(
+        case.case_id == f"robothor:val:{case.setup['episode_id']}" for case in cases
+    )
     assert all("initial_position" not in case.task.public for case in cases)
     assert all(case.truth["shortest_path_length"] >= 0 for case in cases)

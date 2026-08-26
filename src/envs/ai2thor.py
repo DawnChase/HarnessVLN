@@ -46,6 +46,17 @@ class RoboTHOREnvironment:
         self.render_depth = render_depth
         self.expose_pose = expose_pose
         self.expose_action_feedback = expose_action_feedback
+        width = int(self.controller_kwargs.get("width", 640))
+        height = int(self.controller_kwargs.get("height", 480))
+        vertical_fov = float(
+            self.controller_kwargs.get("fieldOfView", 63.453048374758716)
+        )
+        horizontal_fov = math.degrees(
+            2.0
+            * math.atan(
+                math.tan(math.radians(vertical_fov) / 2.0) * (width / height)
+            )
+        )
         observation_channels = {"rgb", "object_goal"}
         if render_depth:
             observation_channels.add("depth")
@@ -62,8 +73,10 @@ class RoboTHOREnvironment:
                 turn_deg=30.0,
             ),
             camera={
-                "height": int(self.controller_kwargs.get("height", 480)),
-                "width": int(self.controller_kwargs.get("width", 640)),
+                "height": height,
+                "width": width,
+                "hfov_deg": horizontal_fov,
+                "vfov_deg": vertical_fov,
             },
         )
         self._controller: Any = None
@@ -87,7 +100,7 @@ class RoboTHOREnvironment:
         self._controller = factory(**self.controller_kwargs)
         setup = self.case.setup
         self._controller.initialization_parameters["robothorChallengeEpisodeId"] = (
-            self.case.case_id
+            setup["episode_id"]
         )
         self._controller.reset(setup["scene"])
         self._event = self._controller.step(

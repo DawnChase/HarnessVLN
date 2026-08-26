@@ -54,3 +54,20 @@ RGB 为 `480x640x3`，Depth 为 `480x640x1`，前进一步位移约 0.25 m。该
 Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
 分别验收。AI2-THOR 和 Isaac Sim SDK 也只加入 `harnessvln`；加入后重新执行 `pip check`、
 全量单测及对应模拟器 smoke test，并同步固定版本。
+
+AI2-THOR 固定为 2.7.2，RoboTHOR 2021 官方 Unity build 固定为
+`bad5bc2b250615cb766ffb45d455c211329af17e`。统一环境同时固定
+`opencv-python==4.11.0.86`，避免 pip 选择要求 NumPy 2 的新版 OpenCV。该旧 build 在当前
+硬件 Xorg 上创建 GLX context 会返回 `BadAlloc`，已用独立 Xvfb 和 Mesa 软件 GLX 完成
+真实 `640x480` RGB、Depth、Teleport、Rotate、Move、Stop 验证：
+
+```bash
+Xvfb :44 -screen 0 1024x768x24 -ac -noreset +extension GLX +render +iglx
+DISPLAY=:44 LIBGL_ALWAYS_SOFTWARE=1 python -m harness.cli <BENCH_YAML> <RUN_YAML>
+```
+
+验证 episode 为 `FloorPlan_Train1_1_AlarmClock_0`；Harness 审计顺序为
+`observe, turn, move, observe, goal.finish, stop`，blocked Move 被保留为动作反馈而没有错误
+终止任务。配置片段见 `config/benches/robothor_objectnav.yaml` 和
+`config/envs/robothor.yaml`。这确认 Environment/Bench 生命周期，不代表已有三个 R2R
+checkpoint 能直接解决 ObjectNav，也不替代完整 validation split 的官方评分对照。

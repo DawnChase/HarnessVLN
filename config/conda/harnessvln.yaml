@@ -8,6 +8,7 @@ dependencies:
   - pip:
       - accelerate==1.4.0
       - addict==2.4.0
+      - ai2thor==2.7.2
       - diffusers==0.32.2
       - depth-camera-filtering @ git+https://github.com/naokiyokoyama/depth_camera_filtering.git@39d6e2f391c8b2198a67ad96f94bf6da0acd48a0
       - einops==0.6.1
@@ -26,7 +27,7 @@ dependencies:
       - numpy==1.26.4
       - numpy-quaternion==2024.0.7
       - omegaconf==2.3.0
-      - opencv-python-headless==4.11.0.86
+      - opencv-python==4.11.0.86
       - Pillow==10.4.0
       - pydantic==2.11.7
       - pytest==8.4.2

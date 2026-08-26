@@ -27,6 +27,7 @@ src/
 
 `harness/` 不依赖具体插件；新增实现只修改所属目录、配置和测试。兼容矩阵见 [v0.1-target.md](v0.1-target.md)。
 
-Habitat-Sim/Lab 0.3.3 已在统一环境完成真实 R2R reset、RGB-D render 与动作 smoke；完整
-split 和官方 metric parity 仍是 release gate。THOR、Isaac 当前仅完成 mock contract，
-安装对应 runtime 并验证真实 reset/render/physics 前保持未验证状态。
+Habitat-Sim/Lab 0.3.3 已完成真实 R2R reset、RGB-D render 与动作 smoke；AI2-THOR
+2.7.2 也已用官方 RoboTHOR 2021 build 完成 Agent 主导的工具链 smoke。两者的完整 split
+和官方 metric parity 仍是 release gate。Isaac 当前仅完成 mock contract，安装 runtime
+并验证真实 reset/render/physics 前保持未验证状态。
