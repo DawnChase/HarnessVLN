@@ -56,6 +56,12 @@ adapter 以 episode 内最小 geodesic distance 和 3 m 阈值补齐官方 OS �
 Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
 分别验收。
 
+Habitat ObjectNav 也使用同一 adapter，但保留独立 Bench 与 YAML。MP3D v1 和 HM3D v2
+validation 首个 shard episode 均已完成真实 reset、`640x480` RGB-D、ObjectGoal、GPS、
+Compass、前进、转向、stop 与 native SR/SPL smoke。HM3D 数据中的 `hm3d_v0.2` scene 前缀
+和 scene-dataset config 只在 native session 边界映射到现有 HM3D 资源；Bench case id 使用
+官方 loader 的 shard 内重编号，原始且可能重复的 episode id 只保存在私有 setup。
+
 AI2-THOR 固定为 2.7.2，RoboTHOR 2021 官方 Unity build 固定为
 `bad5bc2b250615cb766ffb45d455c211329af17e`。统一环境同时固定
 `opencv-python==4.11.0.86`，避免 pip 选择要求 NumPy 2 的新版 OpenCV。该旧 build 在当前

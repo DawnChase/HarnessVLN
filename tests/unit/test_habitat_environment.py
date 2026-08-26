@@ -5,7 +5,7 @@ import asyncio
 import numpy as np
 
 from benches.base import BenchmarkCase
-from envs.habitat import HabitatEnvironment, _same_scene
+from envs.habitat import HabitatEnvironment, _rewrite_prefix, _same_scene
 from harness import NavigationHarness, NavigationStack
 from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
@@ -165,3 +165,12 @@ def test_habitat_scene_matching_accepts_dataset_resolved_paths() -> None:
     assert _same_scene(absolute, relative)
     assert _same_scene(relative, absolute)
     assert not _same_scene(absolute, "mp3d/other/other.glb")
+
+
+def test_habitat_scene_prefix_rewrite_is_explicit_and_ordered() -> None:
+    value = "data/scene_datasets/hm3d_v0.2/val/scene/scene.basis.glb"
+    assert _rewrite_prefix(
+        value,
+        {"data/scene_datasets/hm3d_v0.2/": "data/scene_datasets/hm3d/"},
+    ) == "data/scene_datasets/hm3d/val/scene/scene.basis.glb"
+    assert _rewrite_prefix(value, {"other/": "replacement/"}) == value

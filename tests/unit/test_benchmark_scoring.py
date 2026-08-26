@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from benches import R2RCEBenchmark
+from benches import HabitatObjectNavBenchmark, R2RCEBenchmark
 from benches.base import BenchmarkCase
 from harness.errors import HarnessError
 from schemas import NavGoal, NavTask
@@ -47,3 +47,16 @@ def test_r2r_score_only_recomputes_spl_with_explicit_path_length() -> None:
     assert benchmark.score(case(), fallback)["spl"] == 0.5
     with pytest.raises(HarnessError, match="neither native SPL nor path length"):
         benchmark.score(case(), missing)
+
+
+def test_habitat_objectnav_score_prefers_native_metrics() -> None:
+    result = SimpleNamespace(
+        environment={"success": 1.0, "spl": 0.75, "distance_to_goal": 0.05}
+    )
+    benchmark = HabitatObjectNavBenchmark("unused", dataset="mp3d")
+
+    assert benchmark.score(case(), result) == {
+        "sr": 1.0,
+        "spl": 0.75,
+        "ne": 0.05,
+    }

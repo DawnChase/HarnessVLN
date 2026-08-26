@@ -314,6 +314,8 @@ def create_native_session(
     config_options: Sequence[Any] | None = None,
     config_values: Mapping[str, Any] | None = None,
     source_root: str | Path | None = None,
+    scene_id_rewrites: Mapping[str, str] | None = None,
+    scene_dataset_config: str | Path | None = None,
 ) -> Any:
     """Create a one-episode Habitat session inside a Habitat-enabled process."""
 
@@ -353,6 +355,15 @@ def create_native_session(
         raise HarnessError(
             f"expected one Habitat episode for {case.case_id}, found {len(matches)}"
         )
+    episode = matches[0]
+    if scene_id_rewrites:
+        episode.scene_id = _rewrite_prefix(
+            str(episode.scene_id), scene_id_rewrites
+        )
+    if scene_dataset_config is not None and hasattr(
+        episode, "scene_dataset_config"
+    ):
+        episode.scene_dataset_config = str(scene_dataset_config)
     dataset.episodes = matches
     return habitat.Env(config=env_config, dataset=dataset)
 
@@ -417,3 +428,10 @@ def _same_scene(actual: str, expected: str) -> bool:
         or actual_path.endswith(f"/{expected_path.lstrip('/')}")
         or expected_path.endswith(f"/{actual_path.lstrip('/')}")
     )
+
+
+def _rewrite_prefix(value: str, rewrites: Mapping[str, str]) -> str:
+    for source, destination in rewrites.items():
+        if value.startswith(source):
+            return f"{destination}{value[len(source):]}"
+    return value
