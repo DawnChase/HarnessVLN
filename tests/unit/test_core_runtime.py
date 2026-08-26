@@ -9,7 +9,7 @@ from harness.contracts import NavigationStack
 from harness.errors import MissingToolError, ToolClosedError, ToolValidationError
 from harness.runtime import NavigationHarness
 from harness.tool_bus import Tool, ToolBus
-from schemas import NavGoal, NavTask
+from schemas import EnvironmentTerminal, NavGoal, NavTask
 
 
 def run(coroutine):
@@ -64,9 +64,10 @@ class FakeEnvironment:
         del reason
         self.stopped = True
 
-    async def wait_failure(self) -> str:
+    async def wait_terminal(self) -> EnvironmentTerminal:
         assert self.failure is not None
-        return await self.failure
+        reason = await self.failure
+        return EnvironmentTerminal("failed", reason)
 
     def result(self):
         return {"position": self.position, "stopped": self.stopped}

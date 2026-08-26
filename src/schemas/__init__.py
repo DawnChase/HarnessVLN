@@ -1,3 +1,3 @@
-from schemas.navigation import NavGoal, NavTask, Observation, Pose
+from schemas.navigation import EnvironmentTerminal, NavGoal, NavTask, Observation, Pose
 
-__all__ = ["NavGoal", "NavTask", "Observation", "Pose"]
+__all__ = ["EnvironmentTerminal", "NavGoal", "NavTask", "Observation", "Pose"]

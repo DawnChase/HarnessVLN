@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 JsonObject = dict[str, Any]
@@ -91,3 +91,9 @@ class Observation:
         if self.pose is not None:
             value["pose"] = self.pose.as_dict()
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentTerminal:
+    kind: Literal["completed", "failed"]
+    reason: str

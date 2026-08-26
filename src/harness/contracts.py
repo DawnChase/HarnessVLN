@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from harness.tool_bus import Tool, ToolClient
-from schemas import NavTask
+from schemas import EnvironmentTerminal, NavTask
 
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ class Environment(Protocol):
 
     async def stop(self, reason: str) -> None: ...
 
-    async def wait_failure(self) -> str: ...
+    async def wait_terminal(self) -> EnvironmentTerminal: ...
 
     def result(self) -> JsonObject: ...
 

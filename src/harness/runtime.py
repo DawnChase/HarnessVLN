@@ -8,7 +8,7 @@ from typing import Any, Literal
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
 from harness.tool_bus import JsonObject, Tool, ToolBus, ToolClient, ToolEvent
-from schemas import NavTask
+from schemas import EnvironmentTerminal, NavTask
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +219,7 @@ class NavigationHarness:
         )
 
         agent_task: asyncio.Task[None] | None = None
-        failure_task: asyncio.Task[str] | None = None
+        failure_task: asyncio.Task[EnvironmentTerminal] | None = None
         terminal_task: asyncio.Task[bool] | None = None
         propagate_cancel = False
         try:
@@ -253,7 +253,7 @@ class NavigationHarness:
             )
             agent_task = asyncio.create_task(stack.agent.run(context), name="agent")
             failure_task = asyncio.create_task(
-                stack.environment.wait_failure(), name="environment-failure"
+                stack.environment.wait_terminal(), name="environment-terminal"
             )
             terminal_task = asyncio.create_task(terminal.event.wait(), name="terminal")
 
@@ -268,8 +268,14 @@ class NavigationHarness:
                 pass
             elif failure_task in done:
                 error = failure_task.exception()
-                reason = str(error) if error is not None else failure_task.result()
-                await terminal.set("failed", f"environment failed: {reason}", "harness")
+                if error is not None:
+                    await terminal.set(
+                        "failed", f"environment monitor failed: {error}", "harness"
+                    )
+                else:
+                    native = failure_task.result()
+                    status = "environment_terminal" if native.kind == "completed" else "failed"
+                    await terminal.set(status, native.reason, "environment")
             else:
                 error = agent_task.exception()
                 if error is None:
