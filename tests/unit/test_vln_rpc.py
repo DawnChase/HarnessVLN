@@ -80,14 +80,67 @@ def test_rpc_navigator_runs_through_standard_job_tools(tmp_path) -> None:
     asyncio.run(scenario())
 
 
-def test_protocol_rejects_stdout_log_pollution() -> None:
+def test_model_stdout_and_stderr_are_isolated_from_protocol() -> None:
     async def scenario():
         bus = ToolBus()
         process = JsonLineProcess(
-            (sys.executable, str(WORKER), "--bad-stdout"), request_timeout_s=1
+            (sys.executable, str(WORKER), "--print-logs"), request_timeout_s=1
         )
-        with pytest.raises(RPCError, match="stdout"):
-            await process.start(bus.client("vln", frozenset()), {"protocol": 1, "model": "x"})
+        hello = await process.start(
+            bus.client("vln", frozenset()), {"protocol": 1, "model": "x"}
+        )
+        await process.close()
+        assert hello == {"protocol": 1, "model": "x"}
+        assert "model log leaked to protocol stdout" in process.stdout_tail
+        assert "model diagnostic" in process.stderr_tail
+
+    asyncio.run(scenario())
+
+
+def test_protocol_rejects_invalid_socket_payload() -> None:
+    async def scenario():
+        bus = ToolBus()
+        process = JsonLineProcess(
+            (sys.executable, str(WORKER), "--bad-protocol"), request_timeout_s=1
+        )
+        with pytest.raises(RPCError, match="invalid JSONL"):
+            await process.start(
+                bus.client("vln", frozenset()), {"protocol": 1, "model": "x"}
+            )
+        assert process.returncode is not None
+
+    asyncio.run(scenario())
+
+
+def test_hello_timeout_reaps_process() -> None:
+    async def scenario():
+        bus = ToolBus()
+        process = JsonLineProcess(
+            (sys.executable, str(WORKER), "--delay-hello"), request_timeout_s=0.01
+        )
+        with pytest.raises(RPCError, match="timed out"):
+            await process.start(
+                bus.client("vln", frozenset()), {"protocol": 1, "model": "x"}
+            )
+        assert process.returncode is not None
+
+    asyncio.run(scenario())
+
+
+def test_late_response_is_discarded_without_killing_reader() -> None:
+    async def scenario():
+        bus = ToolBus()
+        process = JsonLineProcess(
+            (sys.executable, str(WORKER)), request_timeout_s=1
+        )
+        await process.start(
+            bus.client("vln", frozenset()), {"protocol": 1, "model": "x"}
+        )
+        process.request_timeout_s = 0.01
+        with pytest.raises(RPCError, match="timed out"):
+            await process.request("slow", {})
+        process.request_timeout_s = 1
+        assert await process.request("ping", {}) == "pong"
         await process.close()
 
     asyncio.run(scenario())

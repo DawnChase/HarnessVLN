@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
+import socket
 import uuid
 from collections import deque
 from collections.abc import Mapping, Sequence
@@ -35,15 +37,28 @@ class JsonLineProcess:
         self.cwd = Path(cwd).resolve() if cwd else None
         self.env = dict(env or {})
         self.request_timeout_s = request_timeout_s
+        self.stdout_tail: deque[str] = deque(maxlen=100)
         self.stderr_tail: deque[str] = deque(maxlen=100)
         self._process: asyncio.subprocess.Process | None = None
         self._tools: ToolClient | None = None
         self._pending: dict[str, asyncio.Future[Any]] = {}
+        self._expired_ids: set[str] = set()
+        self._expired_order: deque[str] = deque()
         self._reader_task: asyncio.Task[None] | None = None
+        self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        self._protocol_reader: asyncio.StreamReader | None = None
+        self._protocol_writer: asyncio.StreamWriter | None = None
         self._tool_tasks: set[asyncio.Task[None]] = set()
+        self._job_tool_tasks: dict[str, set[asyncio.Task[None]]] = {}
+        self._closed_jobs: set[str] = set()
         self._write_lock = asyncio.Lock()
         self._closed = False
+        self._failure: RPCError | None = None
+
+    @property
+    def returncode(self) -> int | None:
+        return self._process.returncode if self._process is not None else None
 
     async def start(self, tools: ToolClient, hello: Mapping[str, Any]) -> dict[str, Any]:
         if self._process is not None:
@@ -51,20 +66,44 @@ class JsonLineProcess:
         environment = os.environ.copy()
         environment.update(self.env)
         self._tools = tools
+        parent_socket, child_socket = socket.socketpair()
+        parent_socket.setblocking(False)
+        child_socket.set_inheritable(True)
+        environment["HARNESS_VLN_RPC_FD"] = str(child_socket.fileno())
         try:
             self._process = await asyncio.create_subprocess_exec(
                 *self.command,
                 cwd=self.cwd,
                 env=environment,
-                stdin=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                pass_fds=(child_socket.fileno(),),
+                start_new_session=True,
             )
         except OSError as error:
+            parent_socket.close()
+            child_socket.close()
             raise RPCError(f"failed to start worker {self.command[0]}: {error}") from error
-        self._reader_task = asyncio.create_task(self._read_stdout(), name="vln-rpc-reader")
-        self._stderr_task = asyncio.create_task(self._read_stderr(), name="vln-rpc-stderr")
-        response = await self.request("hello", dict(hello))
+        finally:
+            child_socket.close()
+        self._protocol_reader, self._protocol_writer = await asyncio.open_connection(
+            sock=parent_socket
+        )
+        self._reader_task = asyncio.create_task(
+            self._read_protocol(), name="vln-rpc-reader"
+        )
+        self._stdout_task = asyncio.create_task(
+            self._read_log("stdout"), name="vln-rpc-stdout"
+        )
+        self._stderr_task = asyncio.create_task(
+            self._read_log("stderr"), name="vln-rpc-stderr"
+        )
+        try:
+            response = await self.request("hello", dict(hello))
+        except BaseException:
+            await self.close()
+            raise
         if not isinstance(response, dict):
             raise RPCError("worker hello response must be an object")
         return response
@@ -72,6 +111,8 @@ class JsonLineProcess:
     async def request(self, method: str, params: Mapping[str, Any]) -> Any:
         if self._closed or self._process is None:
             raise RPCError("worker is not active")
+        if self._failure is not None:
+            raise self._failure
         request_id = uuid.uuid4().hex
         future = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future
@@ -86,7 +127,11 @@ class JsonLineProcess:
             )
             return await asyncio.wait_for(future, timeout=self.request_timeout_s)
         except asyncio.TimeoutError as error:
+            self._remember_expired(request_id)
             raise RPCError(f"worker request timed out: {method}") from error
+        except asyncio.CancelledError:
+            self._remember_expired(request_id)
+            raise
         finally:
             self._pending.pop(request_id, None)
 
@@ -101,38 +146,53 @@ class JsonLineProcess:
                 pass
         self._closed = True
         if process is not None and process.returncode is None:
-            process.terminate()
+            self._signal_process_group(process, signal.SIGTERM)
             try:
                 await asyncio.wait_for(process.wait(), timeout=2.0)
             except asyncio.TimeoutError:
-                process.kill()
+                self._signal_process_group(process, signal.SIGKILL)
                 await process.wait()
         for tool_task in tuple(self._tool_tasks):
             tool_task.cancel()
         if self._tool_tasks:
             await asyncio.gather(*self._tool_tasks, return_exceptions=True)
-        for stream_task in (self._reader_task, self._stderr_task):
-            if stream_task is not None and not stream_task.done():
-                stream_task.cancel()
+        if self._protocol_writer is not None:
+            self._protocol_writer.close()
+            try:
+                await self._protocol_writer.wait_closed()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
         tasks = [
             stream_task
-            for stream_task in (self._reader_task, self._stderr_task)
+            for stream_task in (self._reader_task, self._stdout_task, self._stderr_task)
             if stream_task is not None
         ]
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True), timeout=1.0
+                )
+            except asyncio.TimeoutError:
+                for stream_task in tasks:
+                    if not stream_task.done():
+                        stream_task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
         self._fail_pending(RPCError("worker closed"))
 
-    async def _read_stdout(self) -> None:
-        assert self._process is not None and self._process.stdout is not None
+    async def close_job(self, job_id: str) -> None:
+        self._closed_jobs.add(job_id)
+        tasks = tuple(self._job_tool_tasks.get(job_id, ()))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _read_protocol(self) -> None:
+        assert self._process is not None and self._protocol_reader is not None
         try:
-            while line := await self._process.stdout.readline():
+            while line := await self._protocol_reader.readline():
                 try:
                     message = json.loads(line)
                 except json.JSONDecodeError as error:
-                    raise RPCError(
-                        "worker stdout must contain only JSONL protocol messages"
-                    ) from error
+                    raise RPCError("worker sent invalid JSONL protocol data") from error
                 await self._dispatch(message)
             returncode = await self._process.wait()
             raise RPCError(
@@ -151,6 +211,9 @@ class JsonLineProcess:
             request_id = message.get("id")
             if not isinstance(request_id, str):
                 raise RPCError("worker response id must be a string")
+            if request_id in self._expired_ids:
+                self._expired_ids.discard(request_id)
+                return
             future = self._pending.get(request_id)
             if future is None or future.done():
                 raise RPCError(f"response for unknown request: {request_id}")
@@ -160,9 +223,24 @@ class JsonLineProcess:
                 future.set_exception(RPCError(str(message.get("error", "worker error"))))
             return
         if message_type == "tool_call":
+            job_id = message.get("job_id")
+            if not isinstance(job_id, str):
+                raise RPCError("worker tool_call job_id must be a string")
+            if job_id in self._closed_jobs:
+                raise RPCError(f"tool_call arrived after job closed: {job_id}")
             task = asyncio.create_task(self._handle_tool_call(message), name="vln-tool-call")
             self._tool_tasks.add(task)
-            task.add_done_callback(self._tool_tasks.discard)
+            self._job_tool_tasks.setdefault(job_id, set()).add(task)
+
+            def discard(done: asyncio.Task[None]) -> None:
+                self._tool_tasks.discard(done)
+                job_tasks = self._job_tool_tasks.get(job_id)
+                if job_tasks is not None:
+                    job_tasks.discard(done)
+                    if not job_tasks:
+                        self._job_tool_tasks.pop(job_id, None)
+
+            task.add_done_callback(discard)
             return
         raise RPCError(f"unknown worker message type: {message_type!r}")
 
@@ -188,30 +266,51 @@ class JsonLineProcess:
         await self._send(response)
 
     async def _send(self, message: Mapping[str, Any]) -> None:
-        assert self._process is not None and self._process.stdin is not None
+        assert self._process is not None and self._protocol_writer is not None
         try:
             payload = json.dumps(message, separators=(",", ":")).encode("utf-8") + b"\n"
         except (TypeError, ValueError) as error:
             raise RPCError(f"protocol value is not JSON serializable: {error}") from error
         async with self._write_lock:
-            self._process.stdin.write(payload)
+            self._protocol_writer.write(payload)
             try:
-                await self._process.stdin.drain()
+                await self._protocol_writer.drain()
             except (BrokenPipeError, ConnectionResetError) as error:
                 raise RPCError(f"worker pipe closed; stderr: {self._stderr_summary()}") from error
 
-    async def _read_stderr(self) -> None:
-        assert self._process is not None and self._process.stderr is not None
-        while line := await self._process.stderr.readline():
-            self.stderr_tail.append(line.decode("utf-8", errors="replace").rstrip())
+    async def _read_log(self, stream_name: str) -> None:
+        assert self._process is not None
+        stream = getattr(self._process, stream_name)
+        assert stream is not None
+        target = self.stdout_tail if stream_name == "stdout" else self.stderr_tail
+        while line := await stream.readline():
+            target.append(line.decode("utf-8", errors="replace").rstrip())
 
     def _stderr_summary(self) -> str:
         return " | ".join(self.stderr_tail) or "<empty>"
 
     def _fail_pending(self, error: BaseException) -> None:
+        if isinstance(error, RPCError):
+            self._failure = error
         for future in tuple(self._pending.values()):
             if not future.done():
                 future.set_exception(error)
+
+    def _remember_expired(self, request_id: str) -> None:
+        if len(self._expired_order) >= 1024:
+            oldest = self._expired_order.popleft()
+            self._expired_ids.discard(oldest)
+        self._expired_order.append(request_id)
+        self._expired_ids.add(request_id)
+
+    @staticmethod
+    def _signal_process_group(
+        process: asyncio.subprocess.Process, process_signal: signal.Signals
+    ) -> None:
+        try:
+            os.killpg(process.pid, process_signal)
+        except ProcessLookupError:
+            pass
 
 
 class RPCVLNNavigator:
@@ -248,15 +347,20 @@ class RPCVLNNavigator:
             env=self.env,
             request_timeout_s=self.request_timeout_s,
         )
-        hello = await self._process.start(
-            tools,
-            {
-                "protocol": self.protocol_version,
-                "model": self.model_name,
-                "upstream_root": str(self.upstream_root.resolve()),
-                "checkpoint": str(self.checkpoint.resolve()),
-            },
-        )
+        try:
+            hello = await self._process.start(
+                tools,
+                {
+                    "protocol": self.protocol_version,
+                    "model": self.model_name,
+                    "upstream_root": str(self.upstream_root.resolve()),
+                    "checkpoint": str(self.checkpoint.resolve()),
+                },
+            )
+        except BaseException:
+            await self._process.close()
+            self._process = None
+            raise
         if hello.get("protocol") != self.protocol_version:
             raise RPCError(f"worker protocol mismatch: {hello!r}")
         if hello.get("model") != self.model_name:
@@ -322,7 +426,9 @@ class RPCVLNNavigator:
     async def _cancel_job(self, actor: str, arguments: dict[str, Any]) -> Any:
         del actor
         assert self._process is not None
-        return await self._process.request("navigate.cancel", arguments)
+        result = await self._process.request("navigate.cancel", arguments)
+        await self._process.close_job(arguments["job_id"])
+        return result
 
     async def stop(self, reason: str) -> None:
         del reason

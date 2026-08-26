@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
 import sys
+import time
+
+
+protocol_socket = socket.socket(fileno=int(os.environ["HARNESS_VLN_RPC_FD"]))
+protocol_reader = protocol_socket.makefile("r", encoding="utf-8")
+protocol_writer = protocol_socket.makefile("w", encoding="utf-8", buffering=1)
 
 
 def send(value):
-    print(json.dumps(value, separators=(",", ":")), flush=True)
+    protocol_writer.write(json.dumps(value, separators=(",", ":")) + "\n")
+    protocol_writer.flush()
 
 
-if "--bad-stdout" in sys.argv:
+if "--print-logs" in sys.argv:
     print("model log leaked to protocol stdout", flush=True)
+    print("model diagnostic", file=sys.stderr, flush=True)
+if "--bad-protocol" in sys.argv:
+    protocol_writer.write("not-json\n")
+    protocol_writer.flush()
 
 jobs = {}
-for line in sys.stdin:
+for line in protocol_reader:
     message = json.loads(line)
     if message["type"] == "tool_result":
         continue
@@ -20,6 +33,8 @@ for line in sys.stdin:
     method = message["method"]
     params = message["params"]
     if method == "hello":
+        if "--delay-hello" in sys.argv:
+            time.sleep(1)
         send(
             {
                 "type": "response",
@@ -37,12 +52,13 @@ for line in sys.stdin:
             {
                 "type": "tool_call",
                 "id": call_id,
+                "job_id": "probe-job",
                 "name": params["name"],
                 "arguments": params.get("arguments", {}),
             }
         )
         while True:
-            tool_result = json.loads(sys.stdin.readline())
+            tool_result = json.loads(protocol_reader.readline())
             if tool_result.get("type") == "tool_result" and tool_result.get("id") == call_id:
                 break
         send(
@@ -80,6 +96,11 @@ for line in sys.stdin:
     elif method == "shutdown":
         send({"type": "response", "id": request_id, "ok": True, "result": {}})
         break
+    elif method == "slow":
+        time.sleep(0.1)
+        send({"type": "response", "id": request_id, "ok": True, "result": "late"})
+    elif method == "ping":
+        send({"type": "response", "id": request_id, "ok": True, "result": "pong"})
     else:
         send(
             {
