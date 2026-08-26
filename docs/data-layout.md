@@ -22,6 +22,7 @@ data/
     habitat-test-scenes -> PointVLN/scene_datasets/habitat-test-scenes
   assets/
     goat_bench/                      # 本地实体；goal cache 与 checkpoint
+    vln_pe/                          # 待下载；H1 USD 与 locomotion policy
 ```
 
 ## 当前可用数据
@@ -53,6 +54,10 @@ GOAT cache 四个 split 分别含 435/216/144/504 个文件；两个 checkpoint 
 
 ## 当前未落地
 
-VLN-PE、VLNVerse 的专用场景、episode 和 checkpoint 尚未放入 `data`。StreamVLN、
-JanusVLN、DualVLN 的模型权重已按职责存放在 `model`，不复制到数据目录。
+VLN-PE、VLNVerse 的专用场景、episode、H1 资产和 checkpoint 尚未放入 `data`；当前
+`data/vlnverse` 仅有空目录骨架（约 20 KB），不计为数据已落地。目标配置期望
+`scene_datasets/mp3d_pe`、`scene_datasets/vlnverse`、`vln_pe/raw_data/r2r`、
+`vlnverse/raw_data/vlnverse/final_splits_with_distance_formal/coarse` 以及 H1 USD/policy。
+H1 资源固定放在 `assets/vln_pe/Embodiments/vln-pe/h1`。StreamVLN、JanusVLN、DualVLN
+的模型权重已按职责存放在 `model`，不复制到数据目录。
 AI2-THOR/RoboTHOR 场景由对应 simulator 包管理，也不在这里复制。

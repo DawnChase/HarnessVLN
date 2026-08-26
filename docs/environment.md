@@ -52,8 +52,7 @@ HEADLESS=True WITH_BULLET=False CMAKE_BUILD_PARALLEL_LEVEL=32 \
 已在 MP3D R2R `val_unseen` episode 1 验证真实 reset、RGB-D render、navmesh、前进和转向：
 RGB 为 `480x640x3`，Depth 为 `480x640x1`，前进一步位移约 0.25 m。该结果只确认
 Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
-分别验收。AI2-THOR 和 Isaac Sim SDK 也只加入 `harnessvln`；加入后重新执行 `pip check`、
-全量单测及对应模拟器 smoke test，并同步固定版本。
+分别验收。
 
 AI2-THOR 固定为 2.7.2，RoboTHOR 2021 官方 Unity build 固定为
 `bad5bc2b250615cb766ffb45d455c211329af17e`。统一环境同时固定
@@ -71,3 +70,27 @@ DISPLAY=:44 LIBGL_ALWAYS_SOFTWARE=1 python -m harness.cli <BENCH_YAML> <RUN_YAML
 终止任务。配置片段见 `config/benches/robothor_objectnav.yaml` 和
 `config/envs/robothor.yaml`。这确认 Environment/Bench 生命周期，不代表已有三个 R2R
 checkpoint 能直接解决 ObjectNav，也不替代完整 validation split 的官方评分对照。
+
+Isaac Sim 固定为 4.5.0，使用 NVIDIA pip index 安装在同一个 `harnessvln` 环境。首次启动
+完成 Kit extension 的解析与缓存；随后用原生 `SimulationApp` 创建 ground、红色
+cube、灯光和 `320x240` Camera，取得非空 RGBA 帧（shape `240x320x4`、std `18.106`），
+并正常关闭。该 smoke 验证 Kit、RTX 实时渲染和相机链路，不冒充 VLN episode 验证。
+
+环境中间件使用 InternUtopia 2.2.1 源码 overlay，固定 commit
+`b0a9520c586317c2743023c153cbf7c4f04f4732`。没有直接安装其发行包，因为其
+`transformers==4.26.1` 固定依赖与三个 VLN 已验证的 `4.51.0` 冲突；其余直接运行依赖均
+锁定在 `config/conda/harnessvln.yaml`，当前 `pip check` 通过。InternNav 与 VLNVerse 分别
+固定 commit `7a5c62400ac45b313d9b709c740b64191556a242` 和
+`d444c0412ac50583b0162f690edc0ce1b2aa8639`。
+
+`envs.internutopia` 从一个 `BenchmarkCase` 构造一个官方原生 episode：VLN-PE 使用 MP3D
+坐标/四元数转换与 H1 offset，VLNVerse 保留 Kujiale 坐标；之后分别调用上游
+`get_config` 和 `generate_episode`，再交给各自 extension 与 InternUtopia `Env`。两条路径
+已用临时 USD/H1 资源真实生成 list-of-one native config，path key 分别为 `99999_1` 和
+`route_2`。当前专用场景、H1 USD/locomotion policy 和 episode 尚未落地，所以只声明
+`data_contract`，不声明完成真实 VLN-PE/VLNVerse reset。配置见
+`config/benches/vln_pe.yaml`、`config/benches/vlnverse.yaml` 和对应 `config/envs/` 文件。
+
+Kit 的 SimulationApp 是进程级资源，两套环境组件都声明 `serial: true`；Runner 仍可并行
+完整任务，但 Isaac 的扩展方式是启动多个隔离环境服务进程，而不是在一个 Kit 进程中并发
+创建多个生命周期。

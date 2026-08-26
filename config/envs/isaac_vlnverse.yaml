@@ -8,7 +8,7 @@ stack:
         project_root: cache/upstream/vlnverse
         eval_config: scripts/eval/configs/h1_internvla_n1_cfg_vlnverse_coarse.py
         scene_data_dir: data/scene_datasets/vlnverse
-        robot_usd_path: data/Embodiments/vln-pe/h1/h1_internvla.usd
+        robot_usd_path: data/assets/vln_pe/Embodiments/vln-pe/h1/h1_internvla.usd
         headless: true
         accept_eula: true
       flash: true
