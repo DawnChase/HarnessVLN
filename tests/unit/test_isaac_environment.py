@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from benches.base import BenchmarkCase
+from envs import isaac_vln_pe, isaac_vlnverse
 from envs.isaac import IsaacNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
+from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
+from vln import DualVLNNavigator
 
 
 class FakeIsaacSession:
@@ -133,3 +138,29 @@ def test_isaac_unexpected_native_terminal_preempts_agent() -> None:
         assert result.terminal.actor == "environment"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "module, expected_controller",
+    [(isaac_vln_pe, "move_by_discrete"), (isaac_vlnverse, "move_by_flash")],
+)
+def test_dualvln_isaac_entries_declare_standstill_and_camera(
+    monkeypatch, module, expected_controller
+) -> None:
+    monkeypatch.setattr(module, "load_symbol", lambda _: lambda case: FakeIsaacSession())
+
+    environment = module.from_case(case(), session_factory="fixture:factory")
+
+    assert environment.native_actions["stand_still"] == {"h1": {"stand_still": []}}
+    assert environment.native_actions["forward"] == {
+        "h1": {expected_controller: [1]}
+    }
+    assert environment.profile.camera == {
+        "height": 480,
+        "width": 640,
+        "hfov_deg": 79,
+        "pitch_deg": -30,
+    }
+    check_navigation_requirements(
+        "DualVLNNavigator", DualVLNNavigator.requirements, environment.profile
+    )

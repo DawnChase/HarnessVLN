@@ -20,11 +20,15 @@ def from_case(
     def build(private_case: BenchmarkCase):
         return factory(private_case, **dict(session_params or {}))
 
-    actions = {
+    actions: dict[str, Mapping[str, Any]] = {
+        "stand_still": {"h1": {"stand_still": []}},
         "forward": {"h1": {"move_by_discrete": [1]}},
         "turn_left": {"h1": {"move_by_discrete": [2]}},
         "turn_right": {"h1": {"move_by_discrete": [3]}},
     }
+    adapter_params.setdefault(
+        "camera", {"height": 480, "width": 640, "hfov_deg": 79, "pitch_deg": -30}
+    )
     return IsaacNavigationEnvironment(
         case,
         session_factory=build,

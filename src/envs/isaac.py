@@ -38,6 +38,7 @@ class IsaacNavigationEnvironment:
         frame: str = "isaac_world",
         forward_m: float = 0.25,
         turn_deg: float = 15.0,
+        camera: Mapping[str, Any] | None = None,
         max_native_ticks_per_action: int = 2000,
     ) -> None:
         if max_native_ticks_per_action <= 0:
@@ -62,6 +63,7 @@ class IsaacNavigationEnvironment:
                 forward_m=forward_m,
                 turn_deg=turn_deg,
             ),
+            camera=dict(camera or {}),
         )
         self._session: IsaacSession | None = None
         self._observation: Mapping[str, Any] = {}
