@@ -9,6 +9,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+from harness.media import decode_media_refs
+
 
 class WorkerBackend(Protocol):
     model_name: str
@@ -98,7 +100,7 @@ class WorkerRuntime:
         assert result is not None
         if result.get("ok") is not True:
             raise RuntimeError(str(result.get("error", "tool call failed")))
-        return result.get("result")
+        return decode_media_refs(result.get("result"))
 
     def _handle_request(self, message: Mapping[str, Any]) -> None:
         request_id = message.get("id")

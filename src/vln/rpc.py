@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.errors import HarnessError
+from harness.media import FileArrayStore
 from harness.tool_bus import Tool, ToolClient
 from schemas import NavTask
 
@@ -55,6 +56,7 @@ class JsonLineProcess:
         self._write_lock = asyncio.Lock()
         self._closed = False
         self._failure: RPCError | None = None
+        self._media = FileArrayStore()
 
     @property
     def returncode(self) -> int | None:
@@ -178,6 +180,7 @@ class JsonLineProcess:
                         stream_task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
         self._fail_pending(RPCError("worker closed"))
+        self._media.close()
 
     async def close_job(self, job_id: str) -> None:
         self._closed_jobs.add(job_id)
@@ -268,7 +271,9 @@ class JsonLineProcess:
     async def _send(self, message: Mapping[str, Any]) -> None:
         assert self._process is not None and self._protocol_writer is not None
         try:
-            payload = json.dumps(message, separators=(",", ":")).encode("utf-8") + b"\n"
+            payload = json.dumps(
+                self._media.encode(message), separators=(",", ":")
+            ).encode("utf-8") + b"\n"
         except (TypeError, ValueError) as error:
             raise RPCError(f"protocol value is not JSON serializable: {error}") from error
         async with self._write_lock:
