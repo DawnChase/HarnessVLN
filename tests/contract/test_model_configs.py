@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from benches.base import BenchmarkCase
 from harness.config import ComponentSpec, load_config
+from harness.requirements import check_navigation_requirements
+from schemas import NavGoal, NavTask
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,3 +48,31 @@ def test_vln_fragment_composes_with_run_and_benchmark(
         "width": 640,
         "hfov_deg": 79,
     }
+
+
+@pytest.mark.parametrize("fragment", ("streamvln.yaml", "janusvln.yaml"))
+def test_r2r_environment_composes_with_supported_vln(fragment: str) -> None:
+    resolved = load_config(
+        (
+            ROOT / "config/benches/r2r_ce.yaml",
+            ROOT / "config/runs/dummy_passthrough.yaml",
+            ROOT / "config/envs/habitat_r2r.yaml",
+            ROOT / "config/vln" / fragment,
+        )
+    )
+    case = BenchmarkCase(
+        "r2r_ce:fixture:1",
+        NavTask("r2r:fixture", NavGoal("goal", "Go forward.")),
+    )
+    environment = ComponentSpec.from_config(
+        resolved.data["stack"]["environment"]
+    ).create(case=case)
+    navigator = ComponentSpec.from_config(resolved.data["stack"]["vln"]).create()
+
+    check_navigation_requirements(
+        type(navigator).__name__, navigator.requirements, environment.profile
+    )
+    assert resolved.data["runner"]["parallelism"] == 2
+    assert environment.profile.observation_channels == frozenset(
+        {"rgb", "depth", "gps", "compass", "pose", "camera_intrinsics"}
+    )

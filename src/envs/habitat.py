@@ -44,6 +44,7 @@ class HabitatEnvironment:
         forward_m: float = 0.25,
         turn_deg: float = 15.0,
         camera: Mapping[str, Any] | None = None,
+        oracle_success_distance: float | None = None,
     ) -> None:
         self.case = case
         self.native_factory = native_factory
@@ -52,6 +53,9 @@ class HabitatEnvironment:
             or {"forward": 1, "turn_left": 2, "turn_right": 3, "look_up": 4, "look_down": 5}
         )
         self.goal_finish_action = goal_finish_action
+        if oracle_success_distance is not None and oracle_success_distance <= 0:
+            raise ValueError("oracle_success_distance must be positive")
+        self.oracle_success_distance = oracle_success_distance
         self.observation_channels = tuple(observation_channels)
         self.static_channels = dict(static_channels or {})
         self.expose_pose = expose_pose
@@ -82,6 +86,7 @@ class HabitatEnvironment:
         self._action_count = 0
         self._observation_id = 0
         self._metrics: dict[str, Any] = {}
+        self._minimum_distance_to_goal: float | None = None
 
     async def start(self, task) -> Sequence[Tool]:
         del task
@@ -253,6 +258,24 @@ class HabitatEnvironment:
             value = self._session.get_metrics()
             if isinstance(value, Mapping):
                 self._metrics = dict(value)
+                distance = value.get("distance_to_goal")
+                if isinstance(distance, (int, float)):
+                    numeric_distance = float(distance)
+                    if self._minimum_distance_to_goal is None:
+                        self._minimum_distance_to_goal = numeric_distance
+                    else:
+                        self._minimum_distance_to_goal = min(
+                            self._minimum_distance_to_goal, numeric_distance
+                        )
+                if (
+                    self.oracle_success_distance is not None
+                    and "oracle_success" not in self._metrics
+                    and self._minimum_distance_to_goal is not None
+                ):
+                    self._metrics["oracle_success"] = float(
+                        self._minimum_distance_to_goal
+                        <= self.oracle_success_distance
+                    )
 
     def _native_terminal(self) -> bool:
         return bool(getattr(self._session, "episode_over", False))

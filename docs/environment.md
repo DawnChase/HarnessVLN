@@ -49,8 +49,10 @@ HEADLESS=True WITH_BULLET=False CMAKE_BUILD_PARALLEL_LEVEL=32 \
   python -m pip install cache/upstream/habitat_sim --no-build-isolation
 ```
 
-已在 MP3D R2R `val_unseen` episode 1 验证真实 reset、RGB-D render、navmesh、前进和转向：
-RGB 为 `480x640x3`，Depth 为 `480x640x1`，前进一步位移约 0.25 m。该结果只确认
+已通过 `config/benches/r2r_ce.yaml + config/envs/habitat_r2r.yaml` 在 MP3D R2R
+`val_unseen` episode 1 验证真实 reset、RGB-D render、navmesh、前进、转向与 stop。观测包含
+`640x480` RGB-D、GPS、Compass、标准 pose 和相机内参；前进一步为 0.25 m，左转为 15°。
+adapter 以 episode 内最小 geodesic distance 和 3 m 阈值补齐官方 OS 定义。该结果只确认
 Habitat/R2R 环境链路；完整 split 评分、GOAT 与三个模型的 episode 对照仍按 release gate
 分别验收。
 

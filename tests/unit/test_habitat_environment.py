@@ -127,6 +127,37 @@ def test_habitat_profile_does_not_claim_undeclared_channels() -> None:
     assert environment.profile.observation_channels == frozenset({"rgb"})
 
 
+def test_habitat_adapter_tracks_oracle_success_from_minimum_distance() -> None:
+    class DistanceSession(FakeHabitatSession):
+        distances = (4.0, 2.5, 3.5)
+
+        def get_metrics(self):
+            return {
+                "distance_to_goal": self.distances[min(len(self.actions), 2)],
+                "success": 0.0,
+                "spl": 0.0,
+            }
+
+    async def scenario():
+        fixture = compound_case()
+        session = DistanceSession()
+        environment = HabitatEnvironment(
+            fixture,
+            native_factory=lambda _: session,
+            oracle_success_distance=3.0,
+        )
+
+        await environment.start(fixture.task)
+        assert environment.result()["oracle_success"] == 0.0
+        await environment._move("agent", {"action": "forward"})
+        assert environment.result()["oracle_success"] == 1.0
+        await environment._move("agent", {"action": "forward"})
+        assert environment.result()["oracle_success"] == 1.0
+        await environment.stop("done")
+
+    asyncio.run(scenario())
+
+
 def test_habitat_scene_matching_accepts_dataset_resolved_paths() -> None:
     relative = "mp3d/zsNo4HB9uLZ/zsNo4HB9uLZ.glb"
     absolute = f"/datasets/scene_datasets/{relative}"
