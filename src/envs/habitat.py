@@ -164,7 +164,9 @@ class HabitatEnvironment:
             self._ensure_running()
             if generation != self._generation:
                 raise ToolClosedError("stale Habitat motion generation")
-            self._observation = self._session.step(self.native_actions[arguments["action"]])
+            native_action = self.native_actions[arguments["action"]]
+            if native_action is not None:
+                self._observation = self._session.step(native_action)
             self._action_count += 1
             self._actions_this_goal += 1
             self._capture_metrics()

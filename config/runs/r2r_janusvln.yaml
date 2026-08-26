@@ -1,0 +1,10 @@
+runner:
+  parallelism: 1
+  seed: 7
+  timeout_s: 7200
+  shutdown_timeout_s: 60
+output:
+  root: runs/r2r_janusvln
+provenance:
+  run_scope: full-val_unseen
+  combination: habitat-r2r-janusvln-passthrough

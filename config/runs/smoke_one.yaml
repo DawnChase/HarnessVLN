@@ -1,0 +1,5 @@
+runner:
+  parallelism: 1
+  max_cases: 1
+provenance:
+  run_scope: first-case-smoke

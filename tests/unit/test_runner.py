@@ -124,6 +124,29 @@ def test_runner_streams_cases_and_does_not_eagerly_consume_split() -> None:
     asyncio.run(scenario())
 
 
+def test_runner_can_bound_a_smoke_run_without_consuming_an_extra_case() -> None:
+    class State:
+        produced = 0
+
+    def cases():
+        for index in range(10):
+            State.produced += 1
+            goal = NavGoal(f"goal-{index}", "stop")
+            yield BenchmarkCase(str(index), NavTask(str(index), goal))
+
+    async def scenario():
+        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(10, cases()),
+            stack_for,
+            parallelism=2,
+            max_cases=3,
+        )
+        assert [record.case_id for record in summary.records] == ["0", "1", "2"]
+        assert State.produced == 3
+
+    asyncio.run(scenario())
+
+
 def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
     def factory(case):
         if case.case_id == "1":

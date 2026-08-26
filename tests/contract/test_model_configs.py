@@ -80,3 +80,61 @@ def test_r2r_environment_composes_with_supported_vln(fragment: str) -> None:
     assert environment.profile.observation_channels == frozenset(
         {"rgb", "depth", "gps", "compass", "pose", "camera_intrinsics"}
     )
+
+
+@pytest.mark.parametrize(
+    ("model_fragment", "run_fragment", "environment_overlays"),
+    (
+        ("streamvln.yaml", "r2r_streamvln.yaml", ()),
+        ("janusvln.yaml", "r2r_janusvln.yaml", ()),
+        (
+            "dualvln.yaml",
+            "r2r_dualvln.yaml",
+            ("habitat_r2r_dualvln.yaml",),
+        ),
+    ),
+)
+def test_full_r2r_run_configs_satisfy_model_requirements(
+    model_fragment: str,
+    run_fragment: str,
+    environment_overlays: tuple[str, ...],
+) -> None:
+    paths = [
+        ROOT / "config/benches/r2r_ce.yaml",
+        ROOT / "config/agents/passthrough.yaml",
+        ROOT / "config/envs/habitat_r2r.yaml",
+        *(ROOT / "config/envs" / name for name in environment_overlays),
+        ROOT / "config/vln" / model_fragment,
+        ROOT / "config/runs" / run_fragment,
+    ]
+    resolved = load_config(paths)
+    case = BenchmarkCase(
+        "r2r_ce:fixture:1",
+        NavTask("r2r:fixture", NavGoal("goal", "Go forward.")),
+    )
+    environment = ComponentSpec.from_config(
+        resolved.data["stack"]["environment"]
+    ).create(case=case)
+    navigator = ComponentSpec.from_config(resolved.data["stack"]["vln"]).create()
+
+    check_navigation_requirements(
+        type(navigator).__name__, navigator.requirements, environment.profile
+    )
+    assert resolved.data["runner"]["parallelism"] == 1
+    assert "max_cases" not in resolved.data["runner"]
+
+
+def test_smoke_override_bounds_a_full_model_run() -> None:
+    resolved = load_config(
+        (
+            ROOT / "config/benches/r2r_ce.yaml",
+            ROOT / "config/agents/passthrough.yaml",
+            ROOT / "config/envs/habitat_r2r.yaml",
+            ROOT / "config/vln/streamvln.yaml",
+            ROOT / "config/runs/r2r_streamvln.yaml",
+            ROOT / "config/runs/smoke_one.yaml",
+        )
+    )
+
+    assert resolved.data["runner"]["max_cases"] == 1
+    assert resolved.data["provenance"]["run_scope"] == "first-case-smoke"

@@ -127,6 +127,32 @@ def test_habitat_profile_does_not_claim_undeclared_channels() -> None:
     assert environment.profile.observation_channels == frozenset({"rgb"})
 
 
+def test_habitat_explicit_noop_is_a_logical_action_without_native_stop() -> None:
+    async def scenario():
+        fixture = compound_case()
+        session = FakeHabitatSession()
+        environment = HabitatEnvironment(
+            fixture,
+            native_factory=lambda _: session,
+            native_actions={"stand_still": None, "forward": 1},
+        )
+
+        await environment.start(fixture.task)
+        result = await environment._move("vln", {"action": "stand_still"})
+        await environment.stop("done")
+
+        assert result == {
+            "action": "stand_still",
+            "action_count": 1,
+            "goal_action_count": 1,
+            "native_terminal": False,
+        }
+        assert session.actions == []
+        assert environment.result()["action_count"] == 1
+
+    asyncio.run(scenario())
+
+
 def test_habitat_adapter_tracks_oracle_success_from_minimum_distance() -> None:
     class DistanceSession(FakeHabitatSession):
         distances = (4.0, 2.5, 3.5)

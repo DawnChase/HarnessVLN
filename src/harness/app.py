@@ -57,6 +57,7 @@ async def run_config(paths: Sequence[str | Path]) -> tuple[RunSummary, Path]:
         benchmark,
         stack,
         parallelism=int(runner_config.get("parallelism", 1)),
+        max_cases=runner_config.get("max_cases"),
     )
     output_root = Path(data.get("output", {}).get("root", "runs/latest"))
     manifest_path = write_manifest(output_root, resolved, summary)

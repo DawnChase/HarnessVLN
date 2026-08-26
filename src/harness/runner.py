@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import islice
 
 from benches.base import Benchmark, BenchmarkCase, MetricSet
 from harness.contracts import NavigationStack
@@ -42,9 +43,12 @@ class BenchRunner:
         stack_factory: StackFactory,
         *,
         parallelism: int = 1,
+        max_cases: int | None = None,
     ) -> RunSummary:
         if parallelism < 1:
             raise HarnessError("parallelism must be at least 1")
+        if max_cases is not None and max_cases < 1:
+            raise HarnessError("max_cases must be at least 1")
         if parallelism > 1 and getattr(stack_factory, "requires_serial", False):
             raise HarnessError("this stack requires serial task execution")
 
@@ -54,7 +58,9 @@ class BenchRunner:
         records: list[CaseRecord] = []
 
         async def produce() -> None:
-            for index, case in enumerate(benchmark.cases()):
+            cases = benchmark.cases()
+            selected = cases if max_cases is None else islice(cases, max_cases)
+            for index, case in enumerate(selected):
                 await queue.put((index, case))
             for _ in range(parallelism):
                 await queue.put(None)

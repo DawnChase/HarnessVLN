@@ -1,0 +1,14 @@
+stack:
+  environment:
+    factory: envs.habitat:from_case
+    params:
+      native_factory_params:
+        config_values:
+          habitat.simulator.agents.main_agent.sim_sensors.rgb_sensor.orientation: [-0.5235987756, 0, 0]
+          habitat.simulator.agents.main_agent.sim_sensors.depth_sensor.orientation: [-0.5235987756, 0, 0]
+      native_actions:
+        stand_still: null
+      camera:
+        pitch_deg: -30
+provenance:
+  sensor_profile: dualvln-look-down-30deg

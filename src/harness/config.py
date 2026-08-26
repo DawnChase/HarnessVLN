@@ -38,6 +38,7 @@ CONFIG_SCHEMA = {
             "type": "object",
             "properties": {
                 "parallelism": {"type": "integer", "minimum": 1},
+                "max_cases": {"type": "integer", "minimum": 1},
                 "timeout_s": {"type": "number", "exclusiveMinimum": 0},
                 "shutdown_timeout_s": {"type": "number", "exclusiveMinimum": 0},
                 "seed": {"type": "integer"},
