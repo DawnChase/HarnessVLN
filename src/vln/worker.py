@@ -146,7 +146,7 @@ class WorkerRuntime:
         if not isinstance(options, Mapping):
             raise ValueError("options must be an object")
         with self._state_lock:
-            if any(job["state"] == "running" for job in self._jobs.values()):
+            if any(thread.is_alive() for thread in self._job_threads.values()):
                 raise RuntimeError("worker already has a running navigation job")
             job_id = uuid.uuid4().hex
             self._jobs[job_id] = {"job_id": job_id, "state": "running", "reason": ""}
@@ -197,7 +197,7 @@ class WorkerRuntime:
                 raise KeyError(f"unknown job: {job_id}")
             self._cancelled[job_id].set()
             if self._jobs[job_id]["state"] == "running":
-                self._jobs[job_id].update(state="cancelled", reason="cancel requested")
+                self._jobs[job_id].update(state="cancelling", reason="cancel requested")
             return dict(self._jobs[job_id])
 
     def _cancel_all(self) -> None:
