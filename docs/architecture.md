@@ -13,9 +13,9 @@ HarnessVLN 是 Agent 主导的导航 Harness。Runner 只并发提交完整 Task
 
 ## 生命周期
 
-Harness 打开 Env、Memory、VLN 后创建 Agent，typed facade 与 function calling 共用 ToolBus。GOAT 中 Agent 以 `nav.goal.finish` 推进目标，但不重置位姿、Agent、VLN session 或 Memory，最后才 `nav.stop`。步数上限由 TaskSession 发事件，Runner 不注入动作。
+Harness 打开 Env、Memory、VLN 后创建 Agent，typed facade 与 function calling 共用 ToolBus。GOAT 中 Agent 以 `nav.goal.finish` 推进目标，但不重置位姿、Agent、VLN session 或 Memory，最后才 `nav.stop`。步数与 terminal 由各 Bench/Environment 按原生规则处理，Runner 不注入动作。
 
-Habitat、AI2-THOR、两个 Isaac 入口各自映射。普通 Task 可并行；共享 Memory 时按 key 串行。
+Habitat、AI2-THOR、两个 Isaac 入口各自映射。Isaac adapter 把 warmup 和多个 physics tick 收敛为一次高层动作；VLN-PE 与 VLNVerse 保留不同 factory。普通 Task 可并行，共享写回 Memory 时串行；v0.1 的两个 Isaac 入口均限制为单 lane。
 
 ```text
 src/
@@ -23,3 +23,5 @@ src/
 ```
 
 `harness/` 不依赖具体插件；新增实现只修改所属目录、配置和测试。兼容矩阵见 [v0.1-target.md](v0.1-target.md)。
+
+当前 Habitat、THOR、Isaac 均完成 mock contract；本机未安装对应 runtime，因此真实 reset/render/physics 与官方 metric parity 仍是 release gate，不能标记为 native verified。
