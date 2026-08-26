@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import sys
 import threading
 from collections.abc import Mapping, Sequence
@@ -36,6 +37,8 @@ DEFAULT_MODEL_SETTINGS: dict[str, Any] = {
     "vis_debug": False,
     "vis_debug_path": "./runs/dualvln_debug",
 }
+
+DEPTH_CHECKPOINT_NAME = "depth_anything_v2_metric_hypersim_vits.pth"
 
 ACTION_MAP = {
     -1: "stand_still",
@@ -147,6 +150,27 @@ class NativeDualPolicy:
             )
         config_module = importlib.import_module("internnav.configs.agent")
         model_config_module = importlib.import_module("internnav.configs.model")
+        trajectory_module = importlib.import_module(
+            "internnav.model.basemodel.internvla_n1.nextdit_traj"
+        )
+        _restore_diffusers_gradient_checkpointing(
+            trajectory_module.LuminaNextDiT2DModel
+        )
+        architecture_module = importlib.import_module(
+            "internnav.model.basemodel.internvla_n1.internvla_n1_arch"
+        )
+        depth_checkpoint = Path(
+            str(options.get("depth_checkpoint", checkpoint / DEPTH_CHECKPOINT_NAME))
+        ).resolve()
+        if depth_checkpoint.name != DEPTH_CHECKPOINT_NAME:
+            raise ValueError(
+                f"DualVLN depth checkpoint must be named {DEPTH_CHECKPOINT_NAME}"
+            )
+        if not depth_checkpoint.is_file():
+            raise FileNotFoundError(
+                f"DualVLN depth checkpoint not found: {depth_checkpoint}"
+            )
+        setattr(architecture_module, "MODEL_PATH_TO", str(depth_checkpoint.parent))
         base_config = model_config_module.internvla_n1_cfg.model_dump()
         settings = build_model_settings(base_config, checkpoint, options)
         config = config_module.AgentCfg(
@@ -167,6 +191,20 @@ class NativeDualPolicy:
         # InternNav owns an infinite daemon S2 thread. Process teardown is its
         # lifecycle boundary; dropping the instance avoids racing a final reset.
         self.agent = None
+
+
+def _restore_diffusers_gradient_checkpointing(model_class: type[Any]) -> None:
+    implementation = model_class.__dict__.get("_set_gradient_checkpointing")
+    if implementation is None:
+        return
+    if "enable" in inspect.signature(implementation).parameters:
+        return
+    if not any(
+        "_set_gradient_checkpointing" in base.__dict__
+        for base in model_class.__mro__[1:]
+    ):
+        return
+    delattr(model_class, "_set_gradient_checkpointing")
 
 
 def build_model_settings(

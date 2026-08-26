@@ -11,6 +11,7 @@ from vln.dualvln_worker import (
     DualVLNBackend,
     NativeDualPolicy,
     _require_action,
+    _restore_diffusers_gradient_checkpointing,
     build_model_settings,
 )
 
@@ -211,6 +212,9 @@ def test_native_dual_loader_uses_internnav_agent_contract(
     package_root = source_root / "internnav"
     package_root.mkdir(parents=True)
     checkpoint = tmp_path / "DualVLN"
+    checkpoint.mkdir()
+    depth_checkpoint = checkpoint / "depth_anything_v2_metric_hypersim_vits.pth"
+    depth_checkpoint.touch()
     initialized = {}
 
     class AgentCfg:
@@ -228,12 +232,28 @@ def test_native_dual_loader_uses_internnav_agent_contract(
         def model_dump():
             return {"state_encoder": None, "policy_name": "upstream-default"}
 
+    class CurrentModelMixin:
+        def _set_gradient_checkpointing(
+            self, enable=True, gradient_checkpointing_func=None
+        ):
+            return (enable, gradient_checkpointing_func)
+
+    class LegacyLumina(CurrentModelMixin):
+        def _set_gradient_checkpointing(self, module, value=False):
+            return (module, value)
+
+    architecture = SimpleNamespace(MODEL_PATH_TO="checkpoints")
+
     modules = {
         "internnav.agent": SimpleNamespace(
             __file__=str(package_root / "agent" / "__init__.py"), Agent=Agent
         ),
         "internnav.configs.agent": SimpleNamespace(AgentCfg=AgentCfg),
         "internnav.configs.model": SimpleNamespace(internvla_n1_cfg=ModelConfig()),
+        "internnav.model.basemodel.internvla_n1.nextdit_traj": SimpleNamespace(
+            LuminaNextDiT2DModel=LegacyLumina
+        ),
+        "internnav.model.basemodel.internvla_n1.internvla_n1_arch": architecture,
     }
     monkeypatch.setattr(
         "vln.dualvln_worker.importlib.import_module", lambda name: modules[name]
@@ -253,3 +273,15 @@ def test_native_dual_loader_uses_internnav_agent_contract(
     assert settings["policy_name"] == "InternVLAN1_Policy"
     assert settings["device"] == "cuda:3"
     assert settings["continuous_traj"] is True
+    assert "_set_gradient_checkpointing" not in LegacyLumina.__dict__
+    assert architecture.MODEL_PATH_TO == str(checkpoint)
+
+
+def test_dual_diffusers_patch_keeps_hook_required_by_old_base() -> None:
+    class LegacyLumina:
+        def _set_gradient_checkpointing(self, module, value=False):
+            return (module, value)
+
+    original = LegacyLumina.__dict__["_set_gradient_checkpointing"]
+    _restore_diffusers_gradient_checkpointing(LegacyLumina)
+    assert LegacyLumina.__dict__["_set_gradient_checkpointing"] is original

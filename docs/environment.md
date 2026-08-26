@@ -1,0 +1,24 @@
+# 统一运行环境
+
+项目只使用一个 Conda 环境 `harnessvln`，Python 固定为 3.10。Agent、VLN worker、
+Bench 和环境中间件即使采用独立进程，也必须从该环境启动；进程隔离只用于生命周期和
+GPU 资源隔离，不再用多套 Python 依赖规避接口问题。
+
+基础环境由 `config/conda/harnessvln.yaml` 创建。Blackwell GPU 栈需在基础依赖完成后安装，
+以保证 FlashAttention 构建阶段能够发现 Torch：
+
+```bash
+conda env create -f config/conda/harnessvln.yaml
+conda activate harnessvln
+python -m pip install --index-url https://download.pytorch.org/whl/cu128 \
+  torch==2.8.0 torchvision==0.23.0
+MAX_JOBS=8 python -m pip install flash-attn==2.8.3 --no-build-isolation
+```
+
+统一版本选择以真实模型加载为准。三个 VLN 共用 `transformers==4.51.0`；DualVLN 使用
+`diffusers==0.32.2`，因为其 checkpoint 的 NextDiT FFN 权重为 `384x1024`，而 0.33.1
+会构造不兼容的 `384x1536` 层。当前已验证 Python 3.10.20、Torch 2.8.0+cu128、
+FlashAttention 2.8.3，且 DualVLN 四个权重分片加载完成、残留 meta 参数为 0。
+
+Habitat、AI2-THOR 和 Isaac Sim SDK 后续也只加入 `harnessvln`；加入一种 SDK 后必须重新
+执行 `pip check`、全量单测及对应模拟器 smoke test，配置文件同步追加精确版本。

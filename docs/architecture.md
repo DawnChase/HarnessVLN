@@ -17,6 +17,9 @@ Harness 打开 Env、Memory、VLN 后创建 Agent，typed facade 与 function ca
 
 Habitat、AI2-THOR、两个 Isaac 入口各自映射。Isaac adapter 把 warmup 和多个 physics tick 收敛为一次高层动作；VLN-PE 与 VLNVerse 保留不同 factory。普通 Task 可并行，共享写回 Memory 时串行；v0.1 的两个 Isaac 入口均限制为单 lane。
 
+所有进程统一从 Python 3.10 的 Conda 环境 `harnessvln` 启动。环境与模型的独立进程用于
+故障、生命周期和 GPU 资源隔离，不代表维护多套互相漂移的 Python 环境。
+
 ```text
 src/
   harness/  agents/  envs/  vln/  memory/  benches/
