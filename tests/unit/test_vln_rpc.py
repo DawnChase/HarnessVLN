@@ -105,6 +105,7 @@ def test_worker_sdk_runs_model_owned_navigation_loop(tmp_path) -> None:
             upstream_root=tmp_path,
             checkpoint=checkpoint,
             env={"PYTHONPATH": str(ROOT / "src")},
+            worker_options={"max_steps": 8},
             request_timeout_s=1,
         )
         result = await NavigationHarness(timeout_s=2).run_task(

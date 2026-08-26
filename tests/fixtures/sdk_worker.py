@@ -8,6 +8,7 @@ class FixtureBackend:
 
     def load(self, hello):
         assert hello["checkpoint"]
+        assert hello["options"]["max_steps"] == 8
 
     def navigate(self, instruction, options, tools, cancelled):
         del options

@@ -332,6 +332,7 @@ class RPCVLNNavigator:
         checkpoint: str | Path,
         cwd: str | Path | None = None,
         env: Mapping[str, str] | None = None,
+        worker_options: Mapping[str, Any] | None = None,
         request_timeout_s: float = 300.0,
     ) -> None:
         self.command = tuple(command)
@@ -339,6 +340,7 @@ class RPCVLNNavigator:
         self.checkpoint = Path(checkpoint)
         self.cwd = Path(cwd) if cwd else self.upstream_root
         self.env = dict(env or {})
+        self.worker_options = dict(worker_options or {})
         self.request_timeout_s = request_timeout_s
         self._task: NavTask | None = None
         self._process: JsonLineProcess | None = None
@@ -360,6 +362,7 @@ class RPCVLNNavigator:
                     "model": self.model_name,
                     "upstream_root": str(self.upstream_root.resolve()),
                     "checkpoint": str(self.checkpoint.resolve()),
+                    "options": self.worker_options,
                 },
             )
         except BaseException:
