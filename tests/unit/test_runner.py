@@ -76,7 +76,9 @@ def test_runner_bounds_whole_task_concurrency_and_preserves_order() -> None:
             parallelism=3,
         )
         assert State.maximum == 3
-        assert [record.case_id for record in summary.records] == [str(i) for i in range(9)]
+        assert [record.case_id for record in summary.records] == [
+            str(i) for i in range(9)
+        ]
         assert all(record.metrics == {"completed": 1.0} for record in summary.records)
 
     asyncio.run(scenario())
@@ -177,5 +179,97 @@ def test_shared_writeback_stack_rejects_parallel_execution() -> None:
             await BenchRunner(NavigationHarness()).run(
                 CasesBenchmark(1), SerialFactory(), parallelism=2
             )
+
+    asyncio.run(scenario())
+
+
+def test_runner_closes_run_scoped_factory_after_all_cases() -> None:
+    class ClosableFactory:
+        requires_serial = False
+
+        def __init__(self):
+            self.closed = False
+
+        def __call__(self, case):
+            return stack_for(case)
+
+        async def close_run(self):
+            self.closed = True
+
+    async def scenario():
+        factory = ClosableFactory()
+        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(2), factory, parallelism=1
+        )
+
+        assert len(summary.records) == 2
+        assert factory.closed
+
+    asyncio.run(scenario())
+
+
+def test_runner_does_not_reflect_an_unrelated_factory_close_method() -> None:
+    class Factory:
+        def __init__(self):
+            self.close_calls = 0
+
+        def __call__(self, case):
+            return stack_for(case)
+
+        def close(self, required_argument):
+            del required_argument
+            self.close_calls += 1
+
+    async def scenario():
+        factory = Factory()
+        await BenchRunner(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(1), factory
+        )
+        assert factory.close_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_runner_closes_run_scope_when_validation_fails() -> None:
+    class SerialFactory:
+        requires_serial = True
+
+        def __init__(self):
+            self.close_calls = 0
+
+        def __call__(self, case):
+            return stack_for(case)
+
+        async def close_run(self):
+            self.close_calls += 1
+
+    async def scenario():
+        factory = SerialFactory()
+        with pytest.raises(HarnessError, match="requires serial"):
+            await BenchRunner(NavigationHarness()).run(
+                CasesBenchmark(1), factory, parallelism=2
+            )
+        assert factory.close_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_run_cleanup_error_does_not_mask_primary_runner_error() -> None:
+    class BrokenBenchmark(CasesBenchmark):
+        def cases(self):
+            raise RuntimeError("case generation failed")
+            yield
+
+    class Factory:
+        def __call__(self, case):
+            return stack_for(case)
+
+        async def close_run(self):
+            raise RuntimeError("cleanup failed")
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match="case generation failed") as caught:
+            await BenchRunner(NavigationHarness()).run(BrokenBenchmark(0), Factory())
+        assert caught.value._harness_cleanup_errors == ("RuntimeError: cleanup failed",)
 
     asyncio.run(scenario())

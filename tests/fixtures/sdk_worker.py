@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import time
+from pathlib import Path
+
 from vln.worker import run_worker
 
 
@@ -25,7 +29,12 @@ class FixtureBackend:
         return "cancelled"
 
     def close(self):
-        pass
+        if os.environ.get("HARNESS_CLOSE_ERROR"):
+            raise RuntimeError("fixture backend close failed")
+        marker = os.environ.get("HARNESS_CLOSE_MARKER")
+        if marker:
+            time.sleep(0.25)
+            Path(marker).write_text("closed", encoding="utf-8")
 
 
 run_worker(FixtureBackend())

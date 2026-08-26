@@ -1,6 +1,7 @@
 # 统一运行环境
 
-项目只使用一个 Conda 环境 `harnessvln`，Python 固定为 3.10。Agent、VLN worker、
+项目只使用一个 Conda 环境 `harnessvln`，要求 Python >= 3.10；首发环境因模拟器兼容性
+固定为 Python 3.10。Agent、VLN worker、
 Bench 和环境中间件即使采用独立进程，也必须从该环境启动；进程隔离只用于生命周期和
 GPU 资源隔离，不再用多套 Python 依赖规避接口问题。
 
@@ -26,6 +27,13 @@ DualVLN 的完整 Harness 链路已在 R2R-CE `val_unseen` episode 1 验证。�
 SR 1、SPL 0.936、NE 0.067、OS 1，且无清理错误；紧凑 trace 见
 `docs/traces/dualvln-r2r-val-unseen-1.json`，完整 manifest 位于
 `runs/r2r_dualvln/manifest.json`。该 smoke 不代表 VLN-PE/VLNVerse 已完成真实 episode 验收。
+
+run-scope 另以连续两个 `val_unseen` episode 验证：环境按 Task 重建，DualVLN 从首个 Task
+到第二个 Task 始终为同一 worker PID `2048182`，checkpoint 只加载一次；两个 Task 分别
+执行 53/62 个动作，均 SR 1、OS 1，且均无 cleanup error。Bench 结束后 worker 和逐 job
+RGB-D 临时文件均已清理。紧凑 trace 见
+`docs/traces/dualvln-r2r-val-unseen-run-scope-2.json`，完整 manifest 位于
+`runs/r2r_dualvln_run_scope_two/manifest.json`。
 
 StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主 checkpoint revision 为
 `f1f76c66083c362ddfcd2610167f9c4e4a46c027`，四个 safetensors 分片覆盖索引中的

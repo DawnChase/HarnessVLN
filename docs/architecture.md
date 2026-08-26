@@ -20,5 +20,11 @@ Runner 只在完整 Task 级并行。普通无共享状态组件可并发；共�
 Isaac SimulationApp 由组件 `serial` 元数据约束。未来多 GPU Isaac 并行使用多个隔离环境
 服务进程，不改变 Agent 接口。
 
+大模型 VLN 可声明 `scope: run`：Factory 在首个 Task 懒加载一个 worker，Task 结束时只
+解绑环境 ToolClient，整次 Bench 结束才关闭模型。只有 job 已终结、worker 已确认 release、
+反向工具调用已清空、媒体文件已回收且 transport 健康时才复用；start/release 响应不确定或
+出现迟到调用时直接关闭 worker。单实例 run scope 强制 `parallelism: 1`，未来并行扩展为
+多个独立 worker replica，不让多个 Task 共享一个模型状态机。
+
 组件由 YAML 的 `module:factory` 组合；接口固定最小生命周期，工具和 requirements 数据可扩展。
 兼容矩阵与验证状态见 [v0.1-target.md](v0.1-target.md)。

@@ -46,6 +46,7 @@ def test_vln_fragment_composes_with_run_and_benchmark(
     navigator = ComponentSpec.from_config(spec).create()
 
     assert navigator.model_name == model_name
+    assert spec["scope"] == "run"
     if model_name != "dualvln":
         assert spec["params"]["worker_options"]["local_files_only"] is True
     assert resolved.data["provenance"]["checkpoint_revision"] == revision

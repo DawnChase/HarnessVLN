@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import socket
 import sys
 import time
@@ -23,8 +24,13 @@ if "--print-logs" in sys.argv:
 if "--bad-protocol" in sys.argv:
     protocol_writer.write("not-json\n")
     protocol_writer.flush()
+if "--ignore-shutdown" in sys.argv:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 jobs = {}
+next_job = 1
+dropped_start = False
+malformed_start = False
 for line in protocol_reader:
     message = json.loads(line)
     if message["type"] == "tool_result":
@@ -35,17 +41,23 @@ for line in protocol_reader:
     if method == "hello":
         if "--delay-hello" in sys.argv:
             time.sleep(1)
+        result = {
+            "protocol": params["protocol"],
+            "model": "wrong-model" if "--wrong-model" in sys.argv else params["model"],
+        }
+        if params["protocol"] >= 2:
+            result["capabilities"] = ["navigate.release"]
         send(
             {
                 "type": "response",
                 "id": request_id,
                 "ok": True,
-                "result": {
-                    "protocol": params["protocol"],
-                    "model": "wrong-model" if "--wrong-model" in sys.argv else params["model"],
-                },
+                "result": result,
             }
         )
+        if "--hang-after-hello" in sys.argv:
+            while True:
+                time.sleep(1)
     elif method == "probe_tool":
         call_id = "probe-call"
         send(
@@ -59,7 +71,10 @@ for line in protocol_reader:
         )
         while True:
             tool_result = json.loads(protocol_reader.readline())
-            if tool_result.get("type") == "tool_result" and tool_result.get("id") == call_id:
+            if (
+                tool_result.get("type") == "tool_result"
+                and tool_result.get("id") == call_id
+            ):
                 break
         send(
             {
@@ -71,13 +86,29 @@ for line in protocol_reader:
             }
         )
     elif method == "navigate.start":
-        jobs["job-1"] = {"job_id": "job-1", "state": "succeeded", "reason": "done"}
+        job_id = f"job-{next_job}"
+        next_job += 1
+        jobs[job_id] = {"job_id": job_id, "state": "succeeded", "reason": "done"}
+        if "--drop-first-start" in sys.argv and not dropped_start:
+            dropped_start = True
+            continue
+        if "--malformed-first-start" in sys.argv and not malformed_start:
+            malformed_start = True
+            send(
+                {
+                    "type": "response",
+                    "id": request_id,
+                    "ok": True,
+                    "result": {"job_id": 123},
+                }
+            )
+            continue
         send(
             {
                 "type": "response",
                 "id": request_id,
                 "ok": True,
-                "result": {"job_id": "job-1"},
+                "result": {"job_id": job_id},
             }
         )
     elif method == "navigate.status":
@@ -93,7 +124,30 @@ for line in protocol_reader:
         job = jobs[params["job_id"]]
         job["state"] = "cancelled"
         send({"type": "response", "id": request_id, "ok": True, "result": job})
+    elif method == "navigate.release":
+        job_id = params["job_id"]
+        jobs.pop(job_id)
+        send(
+            {
+                "type": "response",
+                "id": request_id,
+                "ok": True,
+                "result": {"job_id": job_id},
+            }
+        )
+        if "--late-tool-after-release" in sys.argv:
+            send(
+                {
+                    "type": "tool_call",
+                    "id": f"late-{job_id}",
+                    "job_id": job_id,
+                    "name": "nav.observe",
+                    "arguments": {},
+                }
+            )
     elif method == "shutdown":
+        if "--ignore-shutdown" in sys.argv:
+            continue
         send({"type": "response", "id": request_id, "ok": True, "result": {}})
         break
     elif method == "slow":

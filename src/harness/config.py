@@ -27,9 +27,7 @@ CONFIG_SCHEMA = {
                 "agent": {"$ref": "#/$defs/component"},
                 "environment": {"$ref": "#/$defs/component"},
                 "vln": {"anyOf": [{"$ref": "#/$defs/component"}, {"type": "null"}]},
-                "memory": {
-                    "anyOf": [{"$ref": "#/$defs/component"}, {"type": "null"}]
-                },
+                "memory": {"anyOf": [{"$ref": "#/$defs/component"}, {"type": "null"}]},
             },
             "required": ["agent", "environment"],
             "additionalProperties": False,
@@ -57,6 +55,7 @@ CONFIG_SCHEMA = {
                 "factory": {"type": "string", "pattern": "^[^:]+:[^:]+$"},
                 "params": {"type": "object"},
                 "serial": {"type": "boolean"},
+                "scope": {"enum": ["task", "run"]},
             },
             "required": ["factory"],
             "additionalProperties": False,
@@ -77,6 +76,11 @@ class ComponentSpec:
     factory: str
     params: Mapping[str, Any]
     serial: bool = False
+    scope: str = "task"
+
+    def __post_init__(self) -> None:
+        if self.scope not in {"task", "run"}:
+            raise ValueError(f"invalid component scope: {self.scope}")
 
     @classmethod
     def from_config(cls, value: Mapping[str, Any]) -> "ComponentSpec":
@@ -84,6 +88,7 @@ class ComponentSpec:
             str(value["factory"]),
             dict(value.get("params", {})),
             bool(value.get("serial", False)),
+            str(value.get("scope", "task")),
         )
 
     def create(self, **runtime: Any) -> Any:
@@ -123,9 +128,21 @@ def load_config(paths: Sequence[str | Path]) -> ResolvedConfig:
     except ValidationError as error:
         location = ".".join(str(item) for item in error.absolute_path) or "<root>"
         raise HarnessError(f"invalid config at {location}: {error.message}") from error
+    _validate_component_scopes(merged)
     canonical = json.dumps(merged, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return ResolvedConfig(merged, tuple(sources), digest)
+
+
+def _validate_component_scopes(config: Mapping[str, Any]) -> None:
+    benchmark = config["benchmark"]
+    if benchmark.get("scope", "task") != "task":
+        raise HarnessError("benchmark scope must be task")
+    stack = config["stack"]
+    for name in ("agent", "environment", "memory"):
+        component = stack.get(name)
+        if component is not None and component.get("scope", "task") != "task":
+            raise HarnessError(f"stack.{name} scope must be task")
 
 
 def overlay(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:

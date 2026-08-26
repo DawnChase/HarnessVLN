@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,21 +25,86 @@ class ConfiguredStackFactory:
     environment: ComponentSpec
     vln: ComponentSpec | None = None
     memory: ComponentSpec | None = None
+    _run_vln: Any = field(init=False, default=None, repr=False)
+    _close_task: asyncio.Task[None] | None = field(init=False, default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        for name, spec in (
+            ("agent", self.agent),
+            ("environment", self.environment),
+            ("memory", self.memory),
+        ):
+            if spec is not None and spec.scope != "task":
+                raise HarnessError(f"run-scoped {name} components are not supported")
 
     @property
     def requires_serial(self) -> bool:
         components = (self.agent, self.environment, self.vln, self.memory)
-        return any(spec and spec.serial for spec in components) or bool(
-            self.memory and self.memory.params.get("writeback", True)
-        )
+        return any(
+            spec and (spec.serial or spec.scope == "run") for spec in components
+        ) or bool(self.memory and self.memory.params.get("writeback", True))
 
     def __call__(self, case: BenchmarkCase) -> NavigationStack:
+        if self._close_task is not None:
+            raise HarnessError("run-scoped VLN close is still in progress or failed")
+        navigator = self._run_vln
+        if self.vln is not None and self.vln.scope == "run" and navigator is None:
+            navigator = self.vln.create()
+            enable = getattr(navigator, "enable_run_scope", None)
+            close = getattr(navigator, "close_run", None)
+            if not callable(enable) or not callable(close):
+                raise HarnessError(
+                    "run-scoped VLN must implement enable_run_scope() and close_run()"
+                )
+            enable()
+            self._run_vln = navigator
         return NavigationStack(
             agent=self.agent.create(),
             environment=self.environment.create(case=case),
-            vln=self.vln.create() if self.vln else None,
+            vln=(
+                navigator
+                if navigator is not None
+                else (self.vln.create() if self.vln else None)
+            ),
             memory=self.memory.create() if self.memory else None,
         )
+
+    async def close_run(self) -> None:
+        navigator = self._run_vln
+        if navigator is None:
+            return
+        if self._close_task is not None and self._close_task.done():
+            try:
+                close_error = self._close_task.exception()
+            except asyncio.CancelledError:
+                close_error = asyncio.CancelledError()
+            if close_error is not None:
+                self._close_task = None
+        if self._close_task is None:
+
+            async def close_navigator() -> None:
+                result = navigator.close_run()
+                if inspect.isawaitable(result):
+                    await result
+
+            self._close_task = asyncio.create_task(
+                close_navigator(), name="run-scoped-vln-close"
+            )
+        close_task = self._close_task
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError as cancellation:
+            try:
+                await asyncio.shield(close_task)
+            except BaseException as cleanup_error:
+                raise cancellation from cleanup_error
+            if self._run_vln is navigator:
+                self._run_vln = None
+                self._close_task = None
+            raise cancellation
+        if self._run_vln is navigator:
+            self._run_vln = None
+            self._close_task = None
 
 
 async def run_config(paths: Sequence[str | Path]) -> tuple[RunSummary, Path]:
@@ -46,7 +112,9 @@ async def run_config(paths: Sequence[str | Path]) -> tuple[RunSummary, Path]:
     data = resolved.data
     benchmark = ComponentSpec.from_config(data["benchmark"]).create()
     if not _is_benchmark(benchmark):
-        raise HarnessError("configured benchmark does not implement the Benchmark contract")
+        raise HarnessError(
+            "configured benchmark does not implement the Benchmark contract"
+        )
     stack = _stack_factory(data["stack"])
     runner_config = data["runner"]
     harness = NavigationHarness(
@@ -82,10 +150,14 @@ def write_manifest(
                 "execution_id": record.result.execution_id if record.result else None,
                 "terminal": asdict(record.result.terminal) if record.result else None,
                 "environment": record.result.environment if record.result else None,
-                "cleanup_errors": list(record.result.cleanup_errors) if record.result else [],
-                "audit": [asdict(event) for event in record.result.audit]
-                if record.result
-                else [],
+                "cleanup_errors": (
+                    list(record.result.cleanup_errors) if record.result else []
+                ),
+                "audit": (
+                    [asdict(event) for event in record.result.audit]
+                    if record.result
+                    else []
+                ),
             }
         )
     document = {
@@ -101,7 +173,9 @@ def write_manifest(
             "validation_status": summary.validation_status,
         },
         "aggregate_metrics": {
-            name: sum(values) / len(values) for name, values in metrics.items() if values
+            name: sum(values) / len(values)
+            for name, values in metrics.items()
+            if values
         },
         "records": records,
     }
@@ -127,7 +201,9 @@ def _stack_factory(value: Mapping[str, Any]) -> ConfiguredStackFactory:
         agent=ComponentSpec.from_config(value["agent"]),
         environment=ComponentSpec.from_config(value["environment"]),
         vln=ComponentSpec.from_config(value["vln"]) if value.get("vln") else None,
-        memory=ComponentSpec.from_config(value["memory"]) if value.get("memory") else None,
+        memory=(
+            ComponentSpec.from_config(value["memory"]) if value.get("memory") else None
+        ),
     )
 
 

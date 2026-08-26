@@ -44,14 +44,16 @@ class WorkerTools:
 
 
 class WorkerRuntime:
-    protocol_version = 1
+    protocol_version = 2
 
     def __init__(self, backend: WorkerBackend) -> None:
         self.backend = backend
         self._writer: Any = None
         self._write_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._tool_results: dict[str, tuple[threading.Event, dict[str, Any] | None]] = {}
+        self._tool_results: dict[
+            str, tuple[str, threading.Event, dict[str, Any] | None]
+        ] = {}
         self._jobs: dict[str, dict[str, Any]] = {}
         self._job_threads: dict[str, threading.Thread] = {}
         self._cancelled: dict[str, threading.Event] = {}
@@ -78,36 +80,43 @@ class WorkerRuntime:
             self._writer.close()
             protocol_socket.close()
 
-    def call_tool(
-        self, job_id: str, name: str, arguments: Mapping[str, Any]
-    ) -> Any:
+    def call_tool(self, job_id: str, name: str, arguments: Mapping[str, Any]) -> Any:
         call_id = uuid.uuid4().hex
         ready = threading.Event()
         with self._state_lock:
-            self._tool_results[call_id] = (ready, None)
-        self._send(
-            {
-                "type": "tool_call",
-                "id": call_id,
-                "job_id": job_id,
-                "name": name,
-                "arguments": dict(arguments),
-            }
-        )
-        ready.wait()
-        with self._state_lock:
-            _, result = self._tool_results.pop(call_id)
-        assert result is not None
-        if result.get("ok") is not True:
-            raise RuntimeError(str(result.get("error", "tool call failed")))
-        return decode_media_refs(result.get("result"))
+            job = self._jobs.get(job_id)
+            if job is None or job["state"] not in {"running", "cancelling"}:
+                raise RuntimeError(f"navigation job is not active: {job_id}")
+            self._tool_results[call_id] = (job_id, ready, None)
+        try:
+            self._send(
+                {
+                    "type": "tool_call",
+                    "id": call_id,
+                    "job_id": job_id,
+                    "name": name,
+                    "arguments": dict(arguments),
+                }
+            )
+            ready.wait()
+            with self._state_lock:
+                _, _, result = self._tool_results[call_id]
+            assert result is not None
+            if result.get("ok") is not True:
+                raise RuntimeError(str(result.get("error", "tool call failed")))
+            return decode_media_refs(result.get("result"))
+        finally:
+            with self._state_lock:
+                self._tool_results.pop(call_id, None)
 
     def _handle_request(self, message: Mapping[str, Any]) -> None:
         request_id = message.get("id")
         method = message.get("method")
         params = message.get("params")
-        if not isinstance(request_id, str) or not isinstance(method, str) or not isinstance(
-            params, Mapping
+        if (
+            not isinstance(request_id, str)
+            or not isinstance(method, str)
+            or not isinstance(params, Mapping)
         ):
             return
         try:
@@ -119,6 +128,8 @@ class WorkerRuntime:
                 result = self._job_status(params)
             elif method == "navigate.cancel":
                 result = self._cancel_job(params)
+            elif method == "navigate.release":
+                result = self._release_job(params)
             elif method == "shutdown":
                 self._cancel_all()
                 result = {}
@@ -136,7 +147,11 @@ class WorkerRuntime:
             raise ValueError("model mismatch")
         self.backend.load(params)
         self._loaded = True
-        return {"protocol": self.protocol_version, "model": self.backend.model_name}
+        return {
+            "protocol": self.protocol_version,
+            "model": self.backend.model_name,
+            "capabilities": ["navigate.release"],
+        }
 
     def _start_job(self, params: Mapping[str, Any]) -> dict[str, str]:
         instruction = params.get("instruction")
@@ -146,8 +161,8 @@ class WorkerRuntime:
         if not isinstance(options, Mapping):
             raise ValueError("options must be an object")
         with self._state_lock:
-            if any(thread.is_alive() for thread in self._job_threads.values()):
-                raise RuntimeError("worker already has a running navigation job")
+            if self._jobs:
+                raise RuntimeError("worker already has an unreleased navigation job")
             job_id = uuid.uuid4().hex
             self._jobs[job_id] = {"job_id": job_id, "state": "running", "reason": ""}
             cancelled = threading.Event()
@@ -200,18 +215,46 @@ class WorkerRuntime:
                 self._jobs[job_id].update(state="cancelling", reason="cancel requested")
             return dict(self._jobs[job_id])
 
+    def _release_job(self, params: Mapping[str, Any]) -> dict[str, str]:
+        job_id = params.get("job_id")
+        with self._state_lock:
+            if not isinstance(job_id, str) or job_id not in self._jobs:
+                raise KeyError(f"unknown job: {job_id}")
+            thread = self._job_threads[job_id]
+            state = self._jobs[job_id]["state"]
+        if state in {"running", "cancelling"}:
+            raise RuntimeError(f"cannot release active job: {job_id}")
+        thread.join(timeout=1.0)
+        if thread.is_alive():
+            raise RuntimeError(f"job thread did not exit: {job_id}")
+        with self._state_lock:
+            pending = [
+                call_id
+                for call_id, (owner, _, _) in self._tool_results.items()
+                if owner == job_id
+            ]
+            if pending:
+                raise RuntimeError(
+                    f"job still has {len(pending)} pending reverse tool call(s): {job_id}"
+                )
+            self._jobs.pop(job_id)
+            self._job_threads.pop(job_id)
+            self._cancelled.pop(job_id)
+        return {"job_id": job_id}
+
     def _cancel_all(self) -> None:
         with self._state_lock:
             cancellations = tuple(self._cancelled.values())
             pending = tuple(self._tool_results.items())
-            for call_id, (ready, _) in pending:
+            for call_id, (job_id, ready, _) in pending:
                 self._tool_results[call_id] = (
+                    job_id,
                     ready,
                     {"ok": False, "error": "worker is shutting down"},
                 )
         for cancelled in cancellations:
             cancelled.set()
-        for _, (ready, _) in pending:
+        for _, (_, ready, _) in pending:
             ready.set()
         for thread in tuple(self._job_threads.values()):
             thread.join(timeout=2.0)
@@ -224,8 +267,8 @@ class WorkerRuntime:
             pending = self._tool_results.get(call_id)
             if pending is None:
                 return
-            ready, _ = pending
-            self._tool_results[call_id] = (ready, dict(message))
+            job_id, ready, _ = pending
+            self._tool_results[call_id] = (job_id, ready, dict(message))
         ready.set()
 
     def _set_job(self, job_id: str, state: str, reason: str, **extra: Any) -> None:

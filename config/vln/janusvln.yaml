@@ -1,6 +1,7 @@
 stack:
   vln:
     factory: vln.janusvln:JanusVLNNavigator
+    scope: run
     params:
       command:
         - python

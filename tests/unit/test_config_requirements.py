@@ -14,7 +14,9 @@ from schemas import MotionProfile, NavGoal, NavigationProfile, NavTask
 from vln import DummyVLNNavigator
 
 
-def test_yaml_overlay_recurses_replaces_lists_and_null_disables_plugin(tmp_path) -> None:
+def test_yaml_overlay_recurses_replaces_lists_and_null_disables_plugin(
+    tmp_path,
+) -> None:
     base = tmp_path / "base.yaml"
     experiment = tmp_path / "experiment.yaml"
     base.write_text(
@@ -45,9 +47,7 @@ output: {tags: [experiment]}
     )
 
     resolved = load_config((base, experiment))
-    assert resolved.data["stack"]["agent"]["factory"].endswith(
-        "PassthroughVLNAgent"
-    )
+    assert resolved.data["stack"]["agent"]["factory"].endswith("PassthroughVLNAgent")
     assert resolved.data["stack"]["agent"]["params"]["poll_period_s"] == 0.01
     assert resolved.data["stack"]["vln"]["params"]["channels"] == ["rgb"]
     assert resolved.data["stack"]["memory"] is None
@@ -111,11 +111,60 @@ def test_component_serial_metadata_is_not_forwarded_to_factory() -> None:
             "factory": "agents.passthrough:PassthroughVLNAgent",
             "params": {"poll_period_s": 0.25},
             "serial": True,
+            "scope": "task",
         }
     )
 
     assert spec.serial is True
+    assert spec.scope == "task"
     assert isinstance(spec.create(), PassthroughVLNAgent)
+
+
+def test_component_run_scope_is_metadata_not_a_factory_argument() -> None:
+    spec = ComponentSpec.from_config(
+        {
+            "factory": "vln.streamvln:StreamVLNNavigator",
+            "scope": "run",
+            "params": {
+                "command": ["worker"],
+                "upstream_root": "upstream",
+                "checkpoint": "checkpoint",
+            },
+        }
+    )
+
+    assert spec.scope == "run"
+    assert type(spec.create()).__name__ == "StreamVLNNavigator"
+    with pytest.raises(ValueError, match="invalid component scope"):
+        ComponentSpec("agents.passthrough:PassthroughVLNAgent", {}, scope="global")
+
+
+@pytest.mark.parametrize(
+    "component_path", ["benchmark", "stack.agent", "stack.environment"]
+)
+def test_config_rejects_run_scope_outside_vln(tmp_path, component_path) -> None:
+    config = tmp_path / "scope.yaml"
+    document = {
+        "benchmark": {"factory": "benches.dummy:DummyBenchmark", "params": {}},
+        "stack": {
+            "agent": {"factory": "agents.passthrough:PassthroughVLNAgent"},
+            "environment": {"factory": "envs.dummy:from_case"},
+            "vln": None,
+            "memory": None,
+        },
+        "runner": {"parallelism": 1},
+    }
+    target = document
+    parts = component_path.split(".")
+    for part in parts:
+        target = target[part]
+    target["scope"] = "run"
+    import yaml
+
+    config.write_text(yaml.safe_dump(document))
+
+    with pytest.raises(HarnessError, match="scope must be task"):
+        load_config((config,))
 
 
 def test_navigation_requirements_compare_semantics_not_only_tool_name() -> None:
@@ -146,9 +195,7 @@ def test_navigation_requirements_compare_semantics_not_only_tool_name() -> None:
         profile,
     )
     with pytest.raises(RequirementMismatch, match="turn_deg=30"):
-        check_navigation_requirements(
-            "model", {"motion": {"turn_deg": 30}}, profile
-        )
+        check_navigation_requirements("model", {"motion": {"turn_deg": 30}}, profile)
 
 
 def test_requirement_mismatch_prevents_vln_and_agent_start() -> None:
