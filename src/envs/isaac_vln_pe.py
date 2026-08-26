@@ -11,7 +11,7 @@ from harness.config import load_symbol
 def from_case(
     case: BenchmarkCase,
     *,
-    session_factory: str,
+    session_factory: str = "envs.internutopia:create_vln_pe_session",
     session_params: Mapping[str, Any] | None = None,
     **adapter_params: Any,
 ) -> IsaacNavigationEnvironment:

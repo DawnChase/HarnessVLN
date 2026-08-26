@@ -27,7 +27,10 @@ class ConfiguredStackFactory:
 
     @property
     def requires_serial(self) -> bool:
-        return bool(self.memory and self.memory.params.get("writeback", True))
+        components = (self.agent, self.environment, self.vln, self.memory)
+        return any(spec and spec.serial for spec in components) or bool(
+            self.memory and self.memory.params.get("writeback", True)
+        )
 
     def __call__(self, case: BenchmarkCase) -> NavigationStack:
         return NavigationStack(

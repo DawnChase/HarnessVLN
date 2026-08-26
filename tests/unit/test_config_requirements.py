@@ -105,6 +105,19 @@ def test_import_path_factory_creates_plugin_without_registry_edit() -> None:
         ComponentSpec("missing.module:Factory", {}).create()
 
 
+def test_component_serial_metadata_is_not_forwarded_to_factory() -> None:
+    spec = ComponentSpec.from_config(
+        {
+            "factory": "agents.passthrough:PassthroughVLNAgent",
+            "params": {"poll_period_s": 0.25},
+            "serial": True,
+        }
+    )
+
+    assert spec.serial is True
+    assert isinstance(spec.create(), PassthroughVLNAgent)
+
+
 def test_navigation_requirements_compare_semantics_not_only_tool_name() -> None:
     profile = NavigationProfile(
         frozenset({"rgb", "depth", "pose"}),

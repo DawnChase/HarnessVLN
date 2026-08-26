@@ -55,6 +55,7 @@ CONFIG_SCHEMA = {
             "properties": {
                 "factory": {"type": "string", "pattern": "^[^:]+:[^:]+$"},
                 "params": {"type": "object"},
+                "serial": {"type": "boolean"},
             },
             "required": ["factory"],
             "additionalProperties": False,
@@ -74,10 +75,15 @@ class ResolvedConfig:
 class ComponentSpec:
     factory: str
     params: Mapping[str, Any]
+    serial: bool = False
 
     @classmethod
     def from_config(cls, value: Mapping[str, Any]) -> "ComponentSpec":
-        return cls(str(value["factory"]), dict(value.get("params", {})))
+        return cls(
+            str(value["factory"]),
+            dict(value.get("params", {})),
+            bool(value.get("serial", False)),
+        )
 
     def create(self, **runtime: Any) -> Any:
         target = load_symbol(self.factory)
