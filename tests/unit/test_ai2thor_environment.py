@@ -80,8 +80,15 @@ def test_robothor_maps_reset_observe_actions_stop_and_result() -> None:
             observation = await context.nav.observe()
             assert observation["channels"]["rgb"] == "rgb-frame"
             assert observation["channels"]["object_goal"] == "AlarmClock"
+            assert set(observation["channels"]) == {"rgb", "object_goal"}
+            assert "pose" not in observation
+            assert observation["extras"] == {}
             failed_turn = await context.nav.move_discrete("turn_left")
-            assert failed_turn["native_success"] is False
+            assert failed_turn == {
+                "action": "turn_left",
+                "accepted": True,
+                "action_count": 1,
+            }
             await context.nav.move_discrete("forward")
             transition = await context.nav.finish_goal("completed")
             assert transition == {"done": True, "accepted": True, "success": True}
@@ -116,6 +123,41 @@ def test_robothor_maps_reset_observe_actions_stop_and_result() -> None:
         assert result.environment["success"] is True
         assert result.environment["path_length"] == 0.25
         assert len(result.environment["actions_taken"]) == 3
+        assert result.environment["actions_taken"][0]["success"] is False
+
+    asyncio.run(scenario())
+
+
+def test_robothor_optional_depth_pose_and_feedback_are_declared() -> None:
+    class Agent:
+        required_tools = frozenset({"nav.observe", "nav.move.discrete"})
+
+        async def run(self, context):
+            observation = await context.nav.observe()
+            assert observation["channels"]["depth"] == "depth-frame"
+            assert observation["channels"]["pose"]["frame"] == "thor_world"
+            assert observation["extras"]["last_action_success"] is True
+            movement = await context.nav.move_discrete("turn_left")
+            assert movement["native_success"] is False
+            await context.nav.stop("completed")
+
+    async def scenario():
+        fixture = case()
+        environment = RoboTHOREnvironment(
+            fixture,
+            controller_factory=FakeController,
+            render_depth=True,
+            expose_pose=True,
+            expose_action_feedback=True,
+        )
+        assert environment.profile.observation_channels == frozenset(
+            {"rgb", "depth", "pose", "object_goal"}
+        )
+        result = await NavigationHarness(timeout_s=1).run_task(
+            fixture.task,
+            NavigationStack(Agent(), environment),
+        )
+        assert result.terminal.status == "completed"
 
     asyncio.run(scenario())
 
@@ -126,7 +168,8 @@ def test_failed_native_action_is_not_environment_terminal() -> None:
 
         async def run(self, context):
             result = await context.nav.move_discrete("turn_left")
-            assert result["native_success"] is False
+            assert result["accepted"] is True
+            assert "native_success" not in result
             await context.nav.stop("completed", "failed action handled by agent")
 
     async def scenario():
@@ -140,5 +183,6 @@ def test_failed_native_action_is_not_environment_terminal() -> None:
         )
         assert result.terminal.status == "completed"
         assert result.terminal.actor == "agent"
+        assert result.environment["actions_taken"][0]["success"] is False
 
     asyncio.run(scenario())

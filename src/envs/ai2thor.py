@@ -16,21 +16,6 @@ ControllerFactory = Callable[..., Any]
 
 
 class RoboTHOREnvironment:
-    profile = NavigationProfile(
-        observation_channels=frozenset({"rgb", "depth", "pose", "object_goal"}),
-        motion=MotionProfile(
-            tool="nav.move.discrete",
-            actions=frozenset(
-                {"forward", "turn_left", "turn_right", "look_up", "look_down"}
-            ),
-            frame="thor_world",
-            units="meters_degrees",
-            forward_m=0.25,
-            turn_deg=30.0,
-        ),
-        camera={"height": 480, "width": 640},
-    )
-
     ACTIONS = {
         "forward": "MoveAhead",
         "turn_left": "RotateLeft",
@@ -46,11 +31,41 @@ class RoboTHOREnvironment:
         controller_kwargs: Mapping[str, Any] | None = None,
         controller_factory: ControllerFactory | None = None,
         max_actions: int = 500,
+        render_depth: bool | None = None,
+        expose_pose: bool = False,
+        expose_action_feedback: bool = False,
     ) -> None:
         self.case = case
         self.controller_kwargs = dict(controller_kwargs or {})
+        if render_depth is None:
+            render_depth = bool(self.controller_kwargs.get("renderDepthImage", False))
+        elif render_depth:
+            self.controller_kwargs.setdefault("renderDepthImage", True)
         self.controller_factory = controller_factory
         self.max_actions = max_actions
+        self.render_depth = render_depth
+        self.expose_pose = expose_pose
+        self.expose_action_feedback = expose_action_feedback
+        observation_channels = {"rgb", "object_goal"}
+        if render_depth:
+            observation_channels.add("depth")
+        if expose_pose:
+            observation_channels.add("pose")
+        self.profile = NavigationProfile(
+            observation_channels=frozenset(observation_channels),
+            motion=MotionProfile(
+                tool="nav.move.discrete",
+                actions=frozenset(self.ACTIONS),
+                frame="thor_world",
+                units="meters_degrees",
+                forward_m=0.25,
+                turn_deg=30.0,
+            ),
+            camera={
+                "height": int(self.controller_kwargs.get("height", 480)),
+                "width": int(self.controller_kwargs.get("width", 640)),
+            },
+        )
         self._controller: Any = None
         self._event: Any = None
         self._running = False
@@ -131,30 +146,39 @@ class RoboTHOREnvironment:
         self._observation_id += 1
         now = time.time()
         state = self._agent_state()
-        observation = Observation(
-            str(self._observation_id),
-            now,
-            now,
-            "thor_world",
-            {
-                "rgb": self._event.frame,
-                "depth": self._event.depth_frame,
-                "object_goal": self.case.setup["object_type"],
-            },
-            Pose(
+        channels = {
+            "rgb": self._event.frame,
+            "object_goal": self.case.setup["object_type"],
+        }
+        if self.render_depth:
+            channels["depth"] = self._event.depth_frame
+        pose = None
+        if self.expose_pose:
+            pose = Pose(
                 "thor_world",
                 state["x"],
                 state["z"],
                 state["y"],
                 yaw=state["rotation"],
                 pitch=state["horizon"],
-            ),
-            {
+            )
+            channels["pose"] = pose.as_dict()
+        extras = {}
+        if self.expose_action_feedback:
+            extras = {
                 "last_action_success": self._event.metadata.get(
                     "lastActionSuccess", True
                 ),
                 "error_message": self._event.metadata.get("errorMessage", ""),
-            },
+            }
+        observation = Observation(
+            str(self._observation_id),
+            now,
+            now,
+            "thor_world",
+            channels,
+            pose,
+            extras,
         )
         return observation.as_dict()
 
@@ -183,12 +207,14 @@ class RoboTHOREnvironment:
             )
             if len(self._actions) >= self.max_actions:
                 self._publish_terminal("completed", "RoboTHOR action budget reached")
-            return {
+            response = {
                 "action": action,
                 "accepted": True,
-                "native_success": self._actions[-1]["success"],
                 "action_count": len(self._actions),
             }
+            if self.expose_action_feedback:
+                response["native_success"] = self._actions[-1]["success"]
+            return response
 
     async def _finish_goal(
         self, actor: str, arguments: dict[str, Any]

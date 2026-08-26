@@ -115,9 +115,10 @@ class GOATBenchmark:
                 raise HarnessError(f"unknown GOAT modality {modality!r}")
 
             goal_id = f"{case_id}:goal:{index}"
-            public_goals.append(
-                NavGoal(goal_id, instruction, modality, {"goal_type": modality})
-            )
+            public = {"goal_type": modality}
+            if modality == "image":
+                public["observation_channel"] = "cache_instance_imagegoal"
+            public_goals.append(NavGoal(goal_id, instruction, modality, public))
             target_keys = [key]
             if modality == "object":
                 children = {

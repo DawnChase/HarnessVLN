@@ -46,6 +46,11 @@ def test_goat_val_unseen_real_shards_and_private_future_goals() -> None:
     assert all("goal_stream" not in case.task.public for case in cases)
     assert all("native_tasks" not in case.task.public for case in cases)
     assert all("object_id" not in case.task.goal.public for case in cases)
+    image_goals = [goal for goal in goals if goal.modality == "image"]
+    assert all(
+        goal.public["observation_channel"] == "cache_instance_imagegoal"
+        for goal in image_goals
+    )
 
 
 def test_robothor_val_real_data_contract() -> None:
