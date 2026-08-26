@@ -87,6 +87,7 @@ class HabitatEnvironment:
         self._observation_id = 0
         self._metrics: dict[str, Any] = {}
         self._minimum_distance_to_goal: float | None = None
+        self._final_pose: Pose | None = None
 
     async def start(self, task) -> Sequence[Tool]:
         del task
@@ -215,17 +216,21 @@ class HabitatEnvironment:
             self._generation += 1
             self._running = False
             self._capture_metrics()
+            self._final_pose = self._pose()
             if self._session is not None:
                 self._session.close()
 
     def result(self) -> dict[str, Any]:
-        return {
+        value = {
             **self._metrics,
             "action_count": self._action_count,
             "goal_index": self._goal_index,
             "goal_count": len(self._goal_stream),
             "stopped": not self._running,
         }
+        if self._final_pose is not None:
+            value["final_pose"] = self._final_pose.as_dict()
+        return value
 
     def _pose(self) -> Pose | None:
         if not self.expose_pose:

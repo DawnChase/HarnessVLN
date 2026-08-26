@@ -20,6 +20,9 @@ Runner 只在完整 Task 级并行。普通无共享状态组件可并发；共�
 Isaac SimulationApp 由组件 `serial` 元数据约束。未来多 GPU Isaac 并行使用多个隔离环境
 服务进程，不改变 Agent 接口。
 
+批量 CLI 分别统计 Task terminal failure、Runner exception 和 cleanup error；任一非零即以
+非零状态退出。导航策略正常结束但 SR 为 0 仍是有效评测记录，不被误算为 Harness 故障。
+
 大模型 VLN 可声明 `scope: run`：Factory 在首个 Task 懒加载一个 worker，Task 结束时只
 解绑环境 ToolClient，整次 Bench 结束才关闭模型。只有 job 已终结、worker 已确认 release、
 反向工具调用已清空、媒体文件已回收且 transport 健康时才复用；start/release 响应不确定或

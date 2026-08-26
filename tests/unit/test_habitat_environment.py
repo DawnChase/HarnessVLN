@@ -112,6 +112,13 @@ def test_habitat_compound_task_keeps_one_native_session() -> None:
         assert result.environment["goal_index"] == 1
         assert result.environment["goal_count"] == 2
         assert result.environment["native_step_count"] == 4
+        assert result.environment["final_pose"] == {
+            "frame": "habitat_episode",
+            "x": 1.0,
+            "y": 2.0,
+            "z": 0.0,
+            "yaw": 0.5,
+        }
 
     asyncio.run(scenario())
 
