@@ -74,11 +74,19 @@ class R2RCEBenchmark:
     def score(self, case: BenchmarkCase, result: NavigationResult) -> MetricSet:
         environment = result.environment
         success = bool(environment.get("success", False))
-        shortest = float(case.truth["shortest_path_length"])
-        path_length = float(environment.get("path_length", 0.0))
+        if "spl" in environment:
+            spl_value = float(environment["spl"])
+        elif "path_length" in environment:
+            spl_value = spl(
+                success,
+                float(case.truth["shortest_path_length"]),
+                float(environment["path_length"]),
+            )
+        else:
+            raise HarnessError("R2R-CE result has neither native SPL nor path length")
         return {
             "sr": float(success),
-            "spl": spl(success, shortest, path_length),
+            "spl": spl_value,
             "ne": float(environment.get("distance_to_goal", float("inf"))),
             "os": float(bool(environment.get("oracle_success", success))),
         }
