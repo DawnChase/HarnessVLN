@@ -203,8 +203,16 @@ class WorkerRuntime:
     def _cancel_all(self) -> None:
         with self._state_lock:
             cancellations = tuple(self._cancelled.values())
+            pending = tuple(self._tool_results.items())
+            for call_id, (ready, _) in pending:
+                self._tool_results[call_id] = (
+                    ready,
+                    {"ok": False, "error": "worker is shutting down"},
+                )
         for cancelled in cancellations:
             cancelled.set()
+        for _, (ready, _) in pending:
+            ready.set()
         for thread in tuple(self._job_threads.values()):
             thread.join(timeout=2.0)
 
