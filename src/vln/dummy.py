@@ -24,6 +24,16 @@ class DummyVLNNavigator:
     """A complete asynchronous VLN job, not a one-step policy."""
 
     required_tools = frozenset({"nav.observe", "nav.move.discrete"})
+    requirements = {
+        "observation_channels": ["target_delta", "pose"],
+        "motion": {
+            "tool": "nav.move.discrete",
+            "actions": ["forward", "backward"],
+            "frame": "dummy_world",
+            "units": "meters_degrees",
+            "forward_m": 1.0,
+        },
+    }
 
     def __init__(self, *, max_steps: int = 100, inference_period_s: float = 0.0) -> None:
         self.max_steps = max_steps

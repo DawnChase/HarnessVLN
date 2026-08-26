@@ -7,11 +7,31 @@ from typing import Any
 
 from harness.errors import HarnessError, ToolClosedError
 from harness.tool_bus import Tool
-from schemas import EnvironmentTerminal, NavGoal, NavTask, Observation, Pose
+from schemas import (
+    EnvironmentTerminal,
+    MotionProfile,
+    NavGoal,
+    NavigationProfile,
+    NavTask,
+    Observation,
+    Pose,
+)
 
 
 class DummyNavigationEnvironment:
     """Small deterministic adapter used to exercise real Harness contracts."""
+
+    profile = NavigationProfile(
+        observation_channels=frozenset({"target_delta", "pose"}),
+        motion=MotionProfile(
+            tool="nav.move.discrete",
+            actions=frozenset({"forward", "backward", "turn_left", "turn_right"}),
+            frame="dummy_world",
+            units="meters_degrees",
+            forward_m=1.0,
+            turn_deg=90.0,
+        ),
+    )
 
     def __init__(
         self,

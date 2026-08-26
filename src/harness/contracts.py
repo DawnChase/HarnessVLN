@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from harness.tool_bus import Tool, ToolClient
-from schemas import EnvironmentTerminal, NavTask
+from schemas import EnvironmentTerminal, NavigationProfile, NavTask
 
 
 if TYPE_CHECKING:
@@ -22,6 +22,8 @@ class NavigationAgent(Protocol):
 
 
 class Environment(Protocol):
+    profile: NavigationProfile
+
     async def start(self, task: NavTask) -> Sequence[Tool]: ...
 
     async def stop(self, reason: str) -> None: ...
@@ -33,6 +35,7 @@ class Environment(Protocol):
 
 class VLNNavigator(Protocol):
     required_tools: frozenset[str]
+    requirements: dict[str, Any]
 
     async def start(self, task: NavTask, tools: ToolClient) -> Sequence[Tool]: ...
 

@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
+from harness.requirements import check_navigation_requirements
 from harness.tool_bus import JsonObject, Tool, ToolBus, ToolClient, ToolEvent
 from schemas import EnvironmentTerminal, NavTask
 
@@ -235,6 +236,16 @@ class NavigationHarness:
                 bus.register(memory_bindings)
 
             if stack.vln is not None:
+                requirements = getattr(stack.vln, "requirements", {})
+                if requirements:
+                    profile = getattr(stack.environment, "profile", None)
+                    if profile is None:
+                        raise HarnessError(
+                            f"{type(stack.environment).__name__} does not declare a navigation profile"
+                        )
+                    check_navigation_requirements(
+                        type(stack.vln).__name__, requirements, profile
+                    )
                 if "nav.stop" in stack.vln.required_tools:
                     raise HarnessError("VLNNavigator cannot require agent-owned nav.stop")
                 bus.require(type(stack.vln).__name__, stack.vln.required_tools)
