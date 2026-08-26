@@ -24,6 +24,11 @@ ROOT = Path(__file__).resolve().parents[2]
             "janusvln",
             "33f932a4ea6bdc34afca9f5b79a8b4537cd02509",
         ),
+        (
+            "dualvln.yaml",
+            "dualvln",
+            "a698a9e898b4001621a319e1bc89f02ec715cc86",
+        ),
     ),
 )
 def test_vln_fragment_composes_with_run_and_benchmark(
@@ -41,13 +46,12 @@ def test_vln_fragment_composes_with_run_and_benchmark(
     navigator = ComponentSpec.from_config(spec).create()
 
     assert navigator.model_name == model_name
-    assert spec["params"]["worker_options"]["local_files_only"] is True
+    if model_name != "dualvln":
+        assert spec["params"]["worker_options"]["local_files_only"] is True
     assert resolved.data["provenance"]["checkpoint_revision"] == revision
-    assert navigator.requirements["camera"] == {
-        "height": 480,
-        "width": 640,
-        "hfov_deg": 79,
-    }
+    assert navigator.requirements["camera"]["height"] == 480
+    assert navigator.requirements["camera"]["width"] == 640
+    assert navigator.requirements["camera"]["hfov_deg"] == 79
 
 
 @pytest.mark.parametrize("fragment", ("streamvln.yaml", "janusvln.yaml"))

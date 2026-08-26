@@ -1,0 +1,7 @@
+stack:
+  agent:
+    factory: agents.subtask:SubtaskNavigationAgent
+    params:
+      use_memory: true
+      poll_period_s: 0.01
+
