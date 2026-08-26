@@ -40,6 +40,11 @@ meta 参数为 0，测试输入生成 `TURN_RIGHT`。为保持官方 Transformer
 行为，统一环境中的 adapter 显式设置 `use_fast=False`；运行参数见
 `config/vln/janusvln.yaml`。
 
+完整 Harness 链路也在同一 R2R-CE episode 1 验证：JanusVLN 主动执行 43 次 observe 和
+42 个动作后输出 STOP，Agent 再完成 goal 与 task。结果为 SR 1、SPL 1、NE 1.460、OS 1，
+无清理错误；紧凑 trace 见 `docs/traces/janusvln-r2r-val-unseen-1.json`，完整 manifest 位于
+`runs/r2r_janusvln/manifest.json`。该 smoke 同样不替代固定三例对照或完整 split 验收。
+
 Habitat-Sim/Lab 固定为 v0.3.3（Sim commit
 `acbe6f4922e68145e401e55c30f9dfea460a3f24`，Lab commit
 `094d6be2f9d057e4781a68ae792132895fd4d3d0`）。Sim 以 headless、无 Bullet 模式从源码编译；
