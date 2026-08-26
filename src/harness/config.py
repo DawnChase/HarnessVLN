@@ -126,10 +126,26 @@ def overlay(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, A
     for key, value in override.items():
         previous = result.get(key)
         if isinstance(previous, Mapping) and isinstance(value, Mapping):
-            result[key] = overlay(previous, value)
+            result[key] = (
+                overlay({}, value)
+                if _changes_factory(previous, value)
+                else overlay(previous, value)
+            )
         else:
             result[key] = value
     return result
+
+
+def _changes_factory(
+    previous: Mapping[str, Any], replacement: Mapping[str, Any]
+) -> bool:
+    old_factory = previous.get("factory")
+    new_factory = replacement.get("factory")
+    return (
+        isinstance(old_factory, str)
+        and isinstance(new_factory, str)
+        and old_factory != new_factory
+    )
 
 
 def load_symbol(uri: str) -> Any:

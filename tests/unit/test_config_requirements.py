@@ -66,6 +66,34 @@ def test_overlay_does_not_mutate_inputs() -> None:
     assert base == {"nested": {"a": 1}, "items": [1]}
 
 
+def test_overlay_replaces_parameters_when_component_factory_changes() -> None:
+    base = {
+        "vln": {
+            "factory": "vln.old:Navigator",
+            "params": {"old_only": True, "shared": "old"},
+        }
+    }
+    replacement = {
+        "vln": {
+            "factory": "vln.new:Navigator",
+            "params": {"shared": "new"},
+        }
+    }
+
+    assert overlay(base, replacement) == {
+        "vln": {
+            "factory": "vln.new:Navigator",
+            "params": {"shared": "new"},
+        }
+    }
+
+    same_factory = {"vln": {"params": {"shared": "patched"}}}
+    assert overlay(base, same_factory)["vln"]["params"] == {
+        "old_only": True,
+        "shared": "patched",
+    }
+
+
 def test_import_path_factory_creates_plugin_without_registry_edit() -> None:
     spec = ComponentSpec(
         "agents.passthrough:PassthroughVLNAgent", {"poll_period_s": 0.25}

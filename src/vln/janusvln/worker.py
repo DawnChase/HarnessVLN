@@ -44,10 +44,8 @@ class JanusVLNBackend:
         options = hello.get("options", {})
         if not isinstance(options, Mapping):
             raise ValueError("JanusVLN worker options must be an object")
-        self.num_history = int(options.get("num_history", 8))
-        self.max_steps = int(options.get("max_steps", 400))
-        if self.num_history <= 0 or self.max_steps <= 0:
-            raise ValueError("JanusVLN history and step limits are invalid")
+        self.num_history = _positive_int(options.get("num_history", 8), "num_history")
+        self.max_steps = _positive_int(options.get("max_steps", 400), "max_steps")
         upstream_root = Path(str(hello["upstream_root"])).resolve()
         checkpoint = Path(str(hello["checkpoint"])).resolve()
         self.policy.load(upstream_root, checkpoint, options)
@@ -60,12 +58,12 @@ class JanusVLNBackend:
         tools: WorkerTools,
         cancelled: threading.Event,
     ) -> str:
-        del options
         if not self._loaded:
             raise RuntimeError("JanusVLN backend is not loaded")
+        limit = _job_step_limit(options, self.max_steps)
         self.policy.reset()
         history: list[Any] = []
-        for _ in range(self.max_steps):
+        for _ in range(limit):
             if cancelled.is_set():
                 return "cancelled"
             observation = tools.observe()
@@ -83,7 +81,7 @@ class JanusVLNBackend:
             if mapped is None:
                 return f"unknown model action treated as STOP: {action!r}"
             tools.move_discrete(mapped)
-        return f"maximum step count reached: {self.max_steps}"
+        return f"maximum step count reached: {limit}"
 
     def close(self) -> None:
         if self._loaded:
@@ -144,6 +142,7 @@ class NativeJanusPolicy:
             min_pixels=28 * 28,
             max_pixels=1_605_632,
             padding_side="left",
+            use_fast=False,
             local_files_only=local_only,
         )
         self.torch = torch
@@ -254,6 +253,19 @@ def _require_rgb(observation: Mapping[str, Any]) -> Any:
     if str(getattr(rgb, "dtype", "")) != "uint8":
         raise ValueError("JanusVLN expects uint8 RGB")
     return rgb
+
+
+def _job_step_limit(options: Mapping[str, Any], maximum: int) -> int:
+    limit = _positive_int(options.get("max_steps", maximum), "job max_steps")
+    if limit > maximum:
+        raise ValueError(f"job max_steps {limit} exceeds worker limit {maximum}")
+    return limit
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"JanusVLN {name} must be a positive integer")
+    return value
 
 
 if __name__ == "__main__":

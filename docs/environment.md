@@ -27,5 +27,12 @@ StreamVLN 已用同一环境完成本地离线加载与单帧 RGB-D 推理：主
 `(turn_right, turn_right, turn_right, turn_right)`。运行参数见
 `config/vln/streamvln.yaml`。
 
+JanusVLN Base 也已在该环境离线加载并完成单帧 RGB 推理。ModelScope checkpoint revision
+固定为 `33f932a4ea6bdc34afca9f5b79a8b4537cd02509`；四个分片的 SHA-256 与官方清单一致，
+2068 个 tensor 完整覆盖索引。实际模型包含 9,314,832,390 个参数和 24 层 VGGT，残留
+meta 参数为 0，测试输入生成 `TURN_RIGHT`。为保持官方 Transformers 4.50 的图像处理
+行为，统一环境中的 adapter 显式设置 `use_fast=False`；运行参数见
+`config/vln/janusvln.yaml`。
+
 Habitat、AI2-THOR 和 Isaac Sim SDK 后续也只加入 `harnessvln`；加入一种 SDK 后必须重新
 执行 `pip check`、全量单测及对应模拟器 smoke test，配置文件同步追加精确版本。

@@ -53,5 +53,6 @@ GOAT cache 四个 split 分别含 435/216/144/504 个文件；两个 checkpoint 
 
 ## 当前未落地
 
-VLN-PE、VLNVerse 的专用场景/episode/checkpoint，以及 StreamVLN、JanusVLN、DualVLN
-权重尚未放入 `data`。AI2-THOR/RoboTHOR 场景由对应 simulator 包管理，不在这里复制。
+VLN-PE、VLNVerse 的专用场景、episode 和 checkpoint 尚未放入 `data`。StreamVLN、
+JanusVLN、DualVLN 的模型权重已按职责存放在 `model`，不复制到数据目录。
+AI2-THOR/RoboTHOR 场景由对应 simulator 包管理，也不在这里复制。
