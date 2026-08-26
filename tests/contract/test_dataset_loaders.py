@@ -49,6 +49,7 @@ def test_goat_val_unseen_real_shards_and_private_future_goals() -> None:
     assert all(5 <= len(case.setup["goal_stream"]) <= 10 for case in cases)
     assert all(case.task.goal == case.setup["goal_stream"][0] for case in cases)
     assert all("goal_stream" not in case.task.public for case in cases)
+    assert all("goal_specs" not in case.task.public for case in cases)
     assert all("native_tasks" not in case.task.public for case in cases)
     assert all("object_id" not in case.task.goal.public for case in cases)
     image_goals = [goal for goal in goals if goal.modality == "image"]
@@ -56,6 +57,15 @@ def test_goat_val_unseen_real_shards_and_private_future_goals() -> None:
         goal.public["observation_channel"] == "cache_instance_imagegoal"
         for goal in image_goals
     )
+    image_specs = [
+        spec
+        for case in cases
+        for spec in case.setup["goal_specs"]
+        if spec["modality"] == "image"
+    ]
+    assert len(image_specs) == 822
+    assert all("position" in spec["image_goal"] for spec in image_specs)
+    assert all("rotation" in spec["image_goal"] for spec in image_specs)
 
 
 def test_robothor_val_real_data_contract() -> None:

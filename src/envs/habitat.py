@@ -311,6 +311,7 @@ def create_native_session(
     *,
     config_path: str | Path,
     config_loader: str = "envs.habitat:load_habitat_config",
+    config_loader_params: Mapping[str, Any] | None = None,
     config_options: Sequence[Any] | None = None,
     config_values: Mapping[str, Any] | None = None,
     source_root: str | Path | None = None,
@@ -327,7 +328,11 @@ def create_native_session(
     except ImportError as error:
         raise HarnessError("Habitat adapter requires habitat-lab and habitat-sim") from error
     loader = load_symbol(config_loader)
-    config = loader(str(config_path), list(config_options or ()))
+    config = loader(
+        str(config_path),
+        list(config_options or ()),
+        **dict(config_loader_params or {}),
+    )
     if config_values:
         _update_habitat_config(config, config_values)
     task_config = getattr(config, "TASK_CONFIG", None)
@@ -412,10 +417,10 @@ def _prepend_habitat_sources(source_root: str | Path) -> None:
 def _update_habitat_config(config: Any, values: Mapping[str, Any]) -> None:
     try:
         from habitat.config import read_write
-        from omegaconf import OmegaConf
+        from omegaconf import OmegaConf, open_dict
     except ImportError as error:
         raise HarnessError("Habitat config overrides require OmegaConf") from error
-    with read_write(config):
+    with read_write(config), open_dict(config):
         for path, value in values.items():
             OmegaConf.update(config, path, value, merge=False)
 

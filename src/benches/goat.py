@@ -44,7 +44,7 @@ class GOATBenchmark:
                 if case_id in seen:
                     raise HarnessError(f"duplicate GOAT episode id: {case_id}")
                 seen.add(case_id)
-                goals, goal_truth = self._resolve_goals(
+                goals, goal_truth, goal_specs = self._resolve_goals(
                     case_id, raw["scene_id"], raw["tasks"], goal_table
                 )
                 setup = {
@@ -53,6 +53,7 @@ class GOATBenchmark:
                     "start_position": raw["start_position"],
                     "start_rotation": raw["start_rotation"],
                     "goal_stream": goals,
+                    "goal_specs": goal_specs,
                     "native_tasks": raw["tasks"],
                 }
                 yield BenchmarkCase(
@@ -73,12 +74,17 @@ class GOATBenchmark:
         scene_id: str,
         tasks: list[list[Any]],
         table: dict[str, list[dict[str, Any]]],
-    ) -> tuple[tuple[NavGoal, ...], tuple[dict[str, Any], ...]]:
+    ) -> tuple[
+        tuple[NavGoal, ...],
+        tuple[dict[str, Any], ...],
+        tuple[dict[str, Any], ...],
+    ]:
         if not tasks:
             raise HarnessError(f"GOAT episode {case_id} has no goals")
         scene_filename = Path(scene_id).name
         public_goals: list[NavGoal] = []
         truth: list[dict[str, Any]] = []
+        specs: list[dict[str, Any]] = []
         for index, native in enumerate(tasks):
             if len(native) < 3:
                 raise HarnessError(f"invalid GOAT goal in {case_id}: {native!r}")
@@ -141,7 +147,16 @@ class GOATBenchmark:
                     "image_index": image_index,
                 }
             )
-        return tuple(public_goals), tuple(truth)
+            spec: dict[str, Any] = {
+                "modality": modality,
+                "category": category,
+                "object_id": object_id,
+            }
+            if modality == "image":
+                assert selected is not None and image_index is not None
+                spec["image_goal"] = dict(selected["image_goals"][image_index])
+            specs.append(spec)
+        return tuple(public_goals), tuple(truth), tuple(specs)
 
     def score(self, case: BenchmarkCase, result: NavigationResult) -> MetricSet:
         del case

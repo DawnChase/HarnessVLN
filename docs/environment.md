@@ -62,6 +62,14 @@ Compass、前进、转向、stop 与 native SR/SPL smoke。HM3D 数据中的 `hm
 和 scene-dataset config 只在 native session 边界映射到现有 HM3D 资源；Bench case id 使用
 官方 loader 的 shard 内重编号，原始且可能重复的 episode id 只保存在私有 setup。
 
+GOAT-Bench 固定源码 commit `74c41d19d4a4c3608d1575b512087b5a529aee0e`，仅在 adapter
+边界加载官方 dataset、task 与 measurement 模块。`val_unseen` episode
+`goat:val_unseen:4ok3usBNeis:0` 已以单个 Habitat session 执行转向、前进和连续两次
+`subtask_stop`，取得逐目标 distance、success、SPL；10 个未来目标由环境私有持有并逐个
+揭示。image-first episode `4ok3usBNeis:3` 的目标图像真实渲染为 `640x360 uint8`，重复观测
+命中缓存，且渲染前后 agent 位姿不变。配置见 `config/benches/goat.yaml` 和
+`config/envs/habitat_goat.yaml`。
+
 AI2-THOR 固定为 2.7.2，RoboTHOR 2021 官方 Unity build 固定为
 `bad5bc2b250615cb766ffb45d455c211329af17e`。统一环境同时固定
 `opencv-python==4.11.0.86`，避免 pip 选择要求 NumPy 2 的新版 OpenCV。该旧 build 在当前
