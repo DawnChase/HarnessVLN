@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HarnessVLN Trajectory Viewer</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-block">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <strong>HarnessVLN</strong>
+          <span>Trajectory viewer</span>
+        </div>
+      </div>
+      <label class="trace-picker">
+        <span>轨迹</span>
+        <select id="trace-select" aria-label="选择轨迹"></select>
+      </label>
+    </header>
+
+    <main id="app" class="app-shell" aria-busy="true">
+      <section class="trace-heading" aria-labelledby="trace-title">
+        <div>
+          <p id="trace-kicker" class="kicker">JanusVLN · R2R-CE</p>
+          <h1 id="trace-title">正在加载轨迹</h1>
+        </div>
+        <div class="run-status" id="run-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>加载中</span>
+        </div>
+      </section>
+
+      <p id="instruction" class="instruction"></p>
+
+      <section class="metric-strip" aria-label="轨迹指标">
+        <div><span>进度</span><strong id="metric-step">0 / 0</strong></div>
+        <div><span>当前动作</span><strong id="metric-action">—</strong></div>
+        <div><span>目标距离</span><strong id="metric-distance">—</strong></div>
+        <div><span>SR / SPL</span><strong id="metric-success">—</strong></div>
+        <div><span>总耗时</span><strong id="metric-duration">—</strong></div>
+      </section>
+
+      <section class="viewer-grid">
+        <article class="camera-panel" aria-labelledby="camera-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Agent observation</p>
+              <h2 id="camera-title">第一视角</h2>
+            </div>
+            <span id="frame-time" class="frame-time">00:00.0</span>
+          </div>
+          <div class="camera-stage">
+            <img id="camera-frame" alt="JanusVLN 当前观察画面" />
+            <div id="camera-loading" class="camera-loading">加载画面</div>
+            <span id="frame-index" class="frame-index">FRAME 000</span>
+          </div>
+        </article>
+
+        <article class="map-panel" aria-labelledby="map-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Habitat navmesh</p>
+              <h2 id="map-title">俯视路径</h2>
+            </div>
+            <div class="map-legend" aria-label="路径图例">
+              <span><i class="actual-key"></i>Janus</span>
+              <span><i class="reference-key"></i>参考</span>
+            </div>
+          </div>
+          <div id="map-stage" class="map-stage">
+            <img id="navmesh-image" alt="Habitat navmesh 俯视图" />
+            <svg id="route-map" role="img" aria-label="JanusVLN 实际路径与参考路径">
+              <polyline id="reference-route" class="reference-route"></polyline>
+              <circle id="goal-radius" class="goal-radius"></circle>
+              <polyline id="actual-route" class="actual-route"></polyline>
+              <polyline id="completed-route" class="completed-route"></polyline>
+              <circle id="start-marker" class="start-marker" r="5"></circle>
+              <circle id="goal-marker" class="goal-marker" r="6"></circle>
+              <g id="agent-marker" class="agent-marker">
+                <circle r="8"></circle>
+                <path d="M 0 -13 L 5 -4 L 0 -6 L -5 -4 Z"></path>
+              </g>
+            </svg>
+          </div>
+        </article>
+      </section>
+
+      <section class="transport" aria-label="轨迹播放控制">
+        <div class="transport-buttons">
+          <button id="previous-button" class="icon-button" type="button" aria-label="上一步">‹</button>
+          <button id="play-button" class="play-button" type="button" aria-label="播放轨迹">
+            <span id="play-icon" aria-hidden="true">▶</span>
+            <span id="play-label">播放</span>
+          </button>
+          <button id="next-button" class="icon-button" type="button" aria-label="下一步">›</button>
+        </div>
+        <label class="timeline-control">
+          <span class="sr-only">轨迹步骤</span>
+          <input id="timeline" type="range" min="0" max="0" value="0" />
+        </label>
+        <label class="speed-control">
+          <span>速度</span>
+          <select id="speed-select" aria-label="播放速度">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="event-section" aria-labelledby="event-title">
+        <div class="panel-heading event-heading">
+          <div>
+            <p class="eyebrow">Decision sequence</p>
+            <h2 id="event-title">动作序列</h2>
+          </div>
+          <p id="pose-detail" class="pose-detail" aria-live="polite"></p>
+        </div>
+        <div id="action-strip" class="action-strip" aria-label="全部动作"></div>
+      </section>
+
+      <p id="error-message" class="error-message" role="alert" hidden></p>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
