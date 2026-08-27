@@ -155,3 +155,39 @@ def test_required_camera_rejects_an_unavailable_stream(tmp_path) -> None:
         episode.module("environment").unavailable(
             "main_camera", "fixture has no camera"
         )
+
+
+def test_run_and_bench_indexes_are_sorted_by_input_index(tmp_path) -> None:
+    output = RunOutput(
+        {"root": str(tmp_path), "run_id": "ordered"},
+        resolved_config={},
+        config_sources=(),
+        config_digest="e" * 64,
+        provenance={},
+    )
+    second = output.benchmark(1, "second", "test")
+    first = output.benchmark(0, "first", "test")
+    late = first.episode(7, "late", {"case_id": "late"})
+    early = first.episode(2, "early", {"case_id": "early"})
+    late.finish({"case_id": "late"})
+    early.finish({"case_id": "early"})
+    first.finish(
+        {
+            "name": "first",
+            "split": "test",
+            "episodes": [
+                {"index": 7, "case_id": "late"},
+                {"index": 2, "case_id": "early"},
+            ],
+        }
+    )
+    second.finish({"name": "second", "split": "test"})
+    manifest = output.finish(aggregate_metrics={}, status="completed")
+
+    assert [item["benchmark_id"] for item in read_json(manifest)["benchmarks"]] == [
+        "000-first-test",
+        "001-second-test",
+    ]
+    assert [
+        item["index"] for item in read_json(first.path / "summary.json")["episodes"]
+    ] == [2, 7]
