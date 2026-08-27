@@ -643,15 +643,15 @@ class RPCVLNNavigator:
         self._retired_process: JsonLineProcess | None = None
         self._active_jobs: set[str] = set()
         self._terminal_jobs: dict[str, dict[str, Any]] = {}
-        self._run_scoped = False
+        self._session_scoped = False
         self._lifecycle_lock = asyncio.Lock()
 
-    def enable_run_scope(self) -> None:
+    def enable_session_scope(self) -> None:
         if self._process is not None or self._retired_process is not None:
             raise HarnessError(
-                "run scope must be enabled before starting the VLN worker"
+                "session scope must be enabled before starting the VLN worker"
             )
-        self._run_scoped = True
+        self._session_scoped = True
 
     async def start(self, task: NavTask, tools: ToolClient):
         async with self._lifecycle_lock:
@@ -818,7 +818,7 @@ class RPCVLNNavigator:
                 if (
                     self._process is not None
                     and self._process.active
-                    and self._run_scoped
+                    and self._session_scoped
                 ):
                     self._process.detach_tools()
                     self._terminal_jobs.clear()
@@ -829,7 +829,7 @@ class RPCVLNNavigator:
                 await self._close_after_error_locked(error)
                 raise
 
-    async def close_run(self) -> None:
+    async def close_session(self) -> None:
         async with self._lifecycle_lock:
             await self._close_process_locked()
 

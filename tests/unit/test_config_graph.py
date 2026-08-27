@@ -99,20 +99,20 @@ provenance: {agent_protocol: native-tools}
 """,
     )
 
-    run_config = load_runner_config(runner)
+    runner_config = load_runner_config(runner)
     agent_config = load_agent_config(agent)
 
-    assert run_config.settings == {
+    assert runner_config.settings == {
         "bench_parallelism": 1,
         "task_parallelism": 2,
     }
-    assert len(run_config.benches) == 1
-    resolved_bench = run_config.benches[0]
+    assert len(runner_config.benches) == 1
+    resolved_bench = runner_config.benches[0]
     assert resolved_bench.benchmark.params["split"] == "derived"
     assert resolved_bench.environment.component.params["start_position"] == 2
     assert resolved_bench.environment.interactive["scene_id"] == "dummy_scene"
-    assert str(bench.resolve()) in run_config.sources
-    assert run_config.data["provenance"] == {
+    assert str(bench.resolve()) in runner_config.sources
+    assert runner_config.data["provenance"] == {
         "simulator": "dummy",
         "dataset": "fixture",
         "run": "smoke",
@@ -126,7 +126,7 @@ provenance: {agent_protocol: native-tools}
         "model": "dummy",
         "agent_protocol": "native-tools",
     }
-    assert len(run_config.digest) == 64
+    assert len(runner_config.digest) == 64
     assert len(agent_config.digest) == 64
 
 
@@ -167,17 +167,18 @@ def test_runner_requires_at_least_one_bench_reference(tmp_path: Path) -> None:
     (
         (
             "agent",
-            "agent: {factory: agents.passthrough:PassthroughVLNAgent, scope: run}\n",
+            "agent: {factory: agents.passthrough:PassthroughVLNAgent, "
+            "scope: session}\n",
             load_agent_config,
         ),
         (
             "environment",
-            "environment: {factory: envs.dummy:from_episode, scope: run}\n",
+            "environment: {factory: envs.dummy:from_episode, scope: session}\n",
             load_environment_config,
         ),
     ),
 )
-def test_task_owned_components_reject_run_scope(
+def test_task_owned_components_reject_session_scope(
     tmp_path: Path, kind: str, document: str, loader
 ) -> None:
     config = write(tmp_path / f"{kind}.yaml", document)
@@ -186,7 +187,7 @@ def test_task_owned_components_reject_run_scope(
         loader(config)
 
 
-def test_benchmark_rejects_run_scope(tmp_path: Path) -> None:
+def test_benchmark_rejects_session_scope(tmp_path: Path) -> None:
     write(
         tmp_path / "env.yaml",
         "environment: {factory: envs.dummy:from_episode}\n",
@@ -196,7 +197,7 @@ def test_benchmark_rejects_run_scope(tmp_path: Path) -> None:
         """
 benchmark:
   factory: benches.dummy:DummyBenchmark
-  scope: run
+  scope: session
   environment: env.yaml
 """,
     )

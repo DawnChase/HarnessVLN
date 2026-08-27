@@ -25,7 +25,7 @@ def _component_schema(
             "factory": {"type": "string", "pattern": "^[^:]+:[^:]+$"},
             "params": {"type": "object"},
             "serial": {"type": "boolean"},
-            "scope": {"enum": ["task", "run"]},
+            "scope": {"enum": ["task", "session"]},
             **dict(extra_properties or {}),
         },
         "required": ["factory"],
@@ -191,7 +191,7 @@ class ComponentSpec:
     scope: str = "task"
 
     def __post_init__(self) -> None:
-        if self.scope not in {"task", "run"}:
+        if self.scope not in {"task", "session"}:
             raise ValueError(f"invalid component scope: {self.scope}")
 
     @classmethod

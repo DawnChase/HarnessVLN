@@ -255,7 +255,7 @@ def test_worker_sdk_runs_model_owned_navigation_loop(tmp_path) -> None:
     asyncio.run(scenario())
 
 
-def test_run_scoped_worker_is_reused_and_releases_each_jobs_media(tmp_path) -> None:
+def test_session_scoped_worker_is_reused_and_releases_each_jobs_media(tmp_path) -> None:
     class SDKNavigator(RPCVLNNavigator):
         model_name = "sdk-fixture"
         required_tools = frozenset({"nav.observe", "nav.move.discrete"})
@@ -279,7 +279,7 @@ def test_run_scoped_worker_is_reused_and_releases_each_jobs_media(tmp_path) -> N
             worker_options={"max_steps": 8},
             request_timeout_s=1,
         )
-        navigator.enable_run_scope()
+        navigator.enable_session_scope()
         process = None
         process_id = None
         media_root = None
@@ -308,7 +308,7 @@ def test_run_scoped_worker_is_reused_and_releases_each_jobs_media(tmp_path) -> N
             assert list(media_root.iterdir()) == []
 
         assert media_root is not None
-        await navigator.close_run()
+        await navigator.close_session()
         assert not media_root.exists()
         assert navigator._process is None
 
@@ -330,7 +330,7 @@ def test_ambiguous_start_discards_worker_before_next_task(
             checkpoint=checkpoint,
             request_timeout_s=0.05,
         )
-        navigator.enable_run_scope()
+        navigator.enable_session_scope()
         bus = ToolBus()
         await navigator.start(
             NavTask("first", NavGoal("goal-1", "first")),
@@ -360,7 +360,7 @@ def test_ambiguous_start_discards_worker_before_next_task(
         assert navigator._process._process is not None
         assert navigator._process._process.pid != old_pid
         await navigator.stop("done")
-        await navigator.close_run()
+        await navigator.close_session()
 
     asyncio.run(scenario())
 
@@ -375,7 +375,7 @@ def test_concurrent_status_and_cancel_finalize_job_once(tmp_path) -> None:
             checkpoint=checkpoint,
             request_timeout_s=1,
         )
-        navigator.enable_run_scope()
+        navigator.enable_session_scope()
         bus = ToolBus()
         await navigator.start(
             NavTask("race", NavGoal("goal", "race")),
@@ -395,7 +395,7 @@ def test_concurrent_status_and_cancel_finalize_job_once(tmp_path) -> None:
         assert job_id not in navigator._active_jobs
         assert navigator._process is not None and navigator._process.active
         await navigator.stop("done")
-        await navigator.close_run()
+        await navigator.close_session()
 
     asyncio.run(scenario())
 
@@ -427,7 +427,7 @@ def test_late_tool_call_from_released_job_never_reaches_task_tools(tmp_path) -> 
             checkpoint=checkpoint,
             request_timeout_s=1,
         )
-        navigator.enable_run_scope()
+        navigator.enable_session_scope()
         await navigator.start(
             NavTask("late", NavGoal("goal", "late")),
             bus.client("vln", frozenset({"nav.observe"})),
@@ -449,7 +449,7 @@ def test_late_tool_call_from_released_job_never_reaches_task_tools(tmp_path) -> 
             assert not process.active
 
         assert calls == []
-        await navigator.close_run()
+        await navigator.close_session()
         assert navigator._process is None
 
     asyncio.run(scenario())
@@ -663,7 +663,7 @@ def test_process_close_bounds_reverse_tool_cancellation(tmp_path) -> None:
         while not process.quiescent and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.001)
         assert process.quiescent
-        await navigator.close_run()
+        await navigator.close_session()
         assert navigator._retired_process is None
 
     asyncio.run(scenario())

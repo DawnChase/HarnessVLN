@@ -26,7 +26,7 @@ class CaseRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class RunSummary:
+class BenchmarkSummary:
     benchmark: str
     split: str
     validation_status: str
@@ -36,12 +36,12 @@ class RunSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class SuiteSummary:
-    runs: tuple[RunSummary, ...]
+class RunSummary:
+    benchmarks: tuple[BenchmarkSummary, ...]
 
 
-class BenchRunner:
-    """Bounded parallel scheduling of whole tasks; never observes or acts."""
+class BenchmarkExecutor:
+    """Execute one benchmark's whole tasks; never observe, decide, or act."""
 
     def __init__(self, harness: NavigationHarness) -> None:
         self.harness = harness
@@ -53,9 +53,9 @@ class BenchRunner:
         *,
         parallelism: int = 1,
         max_cases: int | None = None,
-    ) -> RunSummary:
-        run_error: BaseException | None = None
-        summary: RunSummary | None = None
+    ) -> BenchmarkSummary:
+        benchmark_error: BaseException | None = None
+        summary: BenchmarkSummary | None = None
         cleanup_errors: list[str] = []
         try:
             if parallelism < 1:
@@ -114,30 +114,30 @@ class BenchRunner:
                 raise
 
             records.sort(key=lambda record: record.index)
-            summary = RunSummary(
+            summary = BenchmarkSummary(
                 benchmark.name,
                 benchmark.split,
                 benchmark.validation_status,
                 tuple(records),
             )
         except BaseException as error:
-            run_error = error
+            benchmark_error = error
             raise
         finally:
-            close_run = getattr(stack_factory, "close_run", None)
-            if callable(close_run):
+            close_session = getattr(stack_factory, "close_session", None)
+            if callable(close_session):
                 try:
-                    result = close_run()
+                    result = close_session()
                     if inspect.isawaitable(result):
                         await result
                 except asyncio.CancelledError:
                     raise
                 except BaseException as cleanup_error:
-                    if run_error is None:
+                    if benchmark_error is None:
                         cleanup_errors.append(_error_text(cleanup_error))
                     else:
-                        _attach_cleanup_error(run_error, cleanup_error)
-        if summary is None:  # pragma: no cover - exceptions leave through the except block
+                        _attach_cleanup_error(benchmark_error, cleanup_error)
+        if summary is None:  # pragma: no cover - exceptions leave via except
             raise AssertionError("benchmark run completed without a summary")
         return replace(summary, cleanup_errors=tuple(cleanup_errors))
 
@@ -151,7 +151,7 @@ def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> Non
         pass
     add_note = getattr(primary, "add_note", None)
     if callable(add_note):
-        add_note(f"Harness run cleanup failed: {message}")
+        add_note(f"Benchmark session cleanup failed: {message}")
 
 
 def _error_text(error: BaseException) -> str:

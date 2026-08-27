@@ -4,4 +4,4 @@ runner:
 output:
   root: runs/r2r_streamvln_smoke
 provenance:
-  run_scope: first-case-smoke
+  evaluation_scope: first-case-smoke

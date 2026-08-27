@@ -1,6 +1,6 @@
 vln:
     factory: vln.janusvln:JanusVLNNavigator
-    scope: run
+    scope: session
     params:
       command:
         - python

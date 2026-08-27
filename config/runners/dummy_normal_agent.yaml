@@ -9,4 +9,4 @@ runner:
 output:
   root: runs/dummy_normal_agent
 provenance:
-  run_scope: embedded-smoke-v1
+  evaluation_scope: embedded-smoke-v1

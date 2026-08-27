@@ -4,7 +4,7 @@ import builtins
 from pathlib import Path
 
 from harness import cli
-from harness.runner import CaseRecord, RunSummary, SuiteSummary
+from harness.runner import BenchmarkSummary, CaseRecord, RunSummary
 from harness.runtime import NavigationResult, Terminal
 
 
@@ -22,9 +22,9 @@ def _result(
 
 
 def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -> None:
-    summary = SuiteSummary(
+    summary = RunSummary(
         (
-            RunSummary(
+            BenchmarkSummary(
                 "bench",
                 "split",
                 "contract",
@@ -39,7 +39,7 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
         received.extend((runner, agent))
         return summary, manifest
 
-    monkeypatch.setattr(cli, "run_config_sync", run)
+    monkeypatch.setattr(cli, "execute_runner_sync", run)
 
     assert (
         cli.main(
@@ -55,7 +55,8 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
     )
     assert received == ["runner.yaml", "agent.yaml"]
     assert capsys.readouterr().out.splitlines() == [
-        "bench/split: 1 cases, 0 task failures, 0 runner errors, 0 cleanup errors",
+        "bench/split: 1 cases, 0 task failures, 0 case errors, 0 bench errors, "
+        "0 cleanup errors",
         str(manifest.resolve()),
     ]
 
@@ -63,15 +64,15 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
 def test_cli_returns_nonzero_and_separates_failure_kinds(
     monkeypatch, capsys, tmp_path: Path
 ) -> None:
-    summary = SuiteSummary(
+    summary = RunSummary(
         (
-            RunSummary(
+            BenchmarkSummary(
                 "bench",
                 "split",
                 "contract",
                 (
                     CaseRecord(0, "task-failure", _result("failed"), {}),
-                    CaseRecord(1, "runner-error", None, {}, "RuntimeError: failed"),
+                    CaseRecord(1, "case-error", None, {}, "RuntimeError: failed"),
                     CaseRecord(
                         2,
                         "cleanup-error",
@@ -84,7 +85,7 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
     )
     manifest = tmp_path / "manifest.json"
     monkeypatch.setattr(
-        cli, "run_config_sync", lambda runner, agent: (summary, manifest)
+        cli, "execute_runner_sync", lambda runner, agent: (summary, manifest)
     )
 
     assert (
@@ -100,16 +101,17 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
         == 1
     )
     assert capsys.readouterr().out.splitlines()[0] == (
-        "bench/split: 3 cases, 1 task failures, 1 runner errors, 1 cleanup errors"
+        "bench/split: 3 cases, 1 task failures, 1 case errors, 0 bench errors, "
+        "1 cleanup errors"
     )
 
 
 def test_cli_reports_bench_level_failure_and_cleanup(
     monkeypatch, capsys, tmp_path: Path
 ) -> None:
-    summary = SuiteSummary(
+    summary = RunSummary(
         (
-            RunSummary(
+            BenchmarkSummary(
                 "broken-bench",
                 "split",
                 "contract",
@@ -121,7 +123,7 @@ def test_cli_reports_bench_level_failure_and_cleanup(
     )
     manifest = tmp_path / "manifest.json"
     monkeypatch.setattr(
-        cli, "run_config_sync", lambda runner, agent: (summary, manifest)
+        cli, "execute_runner_sync", lambda runner, agent: (summary, manifest)
     )
 
     assert (
@@ -137,7 +139,8 @@ def test_cli_reports_bench_level_failure_and_cleanup(
         == 1
     )
     assert capsys.readouterr().out.splitlines() == [
-        "broken-bench/split: 0 cases, 0 task failures, 1 runner errors, 1 cleanup errors",
+        "broken-bench/split: 0 cases, 0 task failures, 0 case errors, "
+        "1 bench errors, 1 cleanup errors",
         "  bench error: RuntimeError: case stream failed",
         str(manifest.resolve()),
     ]

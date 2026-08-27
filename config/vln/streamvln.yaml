@@ -1,6 +1,6 @@
 vln:
     factory: vln.streamvln:StreamVLNNavigator
-    scope: run
+    scope: session
     params:
       command:
         - python

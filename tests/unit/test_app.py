@@ -10,7 +10,7 @@ from harness.app import (
     ConfiguredStackFactory,
     InteractiveNavigationSession,
     _stack_factory,
-    run_config,
+    execute_runner,
 )
 from harness.config import (
     ComponentSpec,
@@ -162,7 +162,7 @@ def test_interactive_close_can_retry_after_factory_error() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        async def close_run(self) -> None:
+        async def close_session(self) -> None:
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("close failed")
@@ -186,7 +186,7 @@ def test_interactive_close_can_retry_after_factory_error() -> None:
     asyncio.run(scenario())
 
 
-def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
+def test_session_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
     checkpoint = tmp_path / "checkpoint"
     checkpoint.write_text("fixture")
     factory = ConfiguredStackFactory(
@@ -199,7 +199,7 @@ def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
                 "upstream_root": str(tmp_path),
                 "checkpoint": str(checkpoint),
             },
-            scope="run",
+            scope="session",
         ),
     )
     cases = list(factory_case_source().cases())
@@ -209,10 +209,10 @@ def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
     assert first.vln is second.vln
     assert factory.requires_serial
     assert factory.global_serial_reasons == ()
-    asyncio.run(factory.close_run())
+    asyncio.run(factory.close_session())
     third = factory(cases[0].environment_episode)
     assert third.vln is not first.vln
-    asyncio.run(factory.close_run())
+    asyncio.run(factory.close_session())
 
 
 def test_runner_rejects_cross_bench_global_resource_race(tmp_path) -> None:
@@ -228,20 +228,20 @@ def test_runner_rejects_cross_bench_global_resource_race(tmp_path) -> None:
     )
 
     with pytest.raises(HarnessError, match="memory.writeback"):
-        asyncio.run(run_config(runner, "config/agents/normal_agent.yaml"))
+        asyncio.run(execute_runner(runner, "config/agents/normal_agent.yaml"))
 
 
-def test_run_scope_is_rejected_for_task_owned_components() -> None:
-    with pytest.raises(HarnessError, match="run-scoped agent"):
+def test_session_scope_is_rejected_for_task_owned_components() -> None:
+    with pytest.raises(HarnessError, match="session-scoped agent"):
         ConfiguredStackFactory(
             agent=ComponentSpec(
-                "agents.passthrough:PassthroughVLNAgent", {}, scope="run"
+                "agents.passthrough:PassthroughVLNAgent", {}, scope="session"
             ),
             environment=spec("envs.dummy:from_episode"),
         )
 
 
-def test_run_scoped_factory_closes_once_for_concurrent_callers() -> None:
+def test_session_scoped_factory_closes_once_for_concurrent_callers() -> None:
     async def scenario():
         entered = asyncio.Event()
         release = asyncio.Event()
@@ -249,7 +249,7 @@ def test_run_scoped_factory_closes_once_for_concurrent_callers() -> None:
         class Navigator:
             close_calls = 0
 
-            async def close_run(self):
+            async def close_session(self):
                 self.close_calls += 1
                 entered.set()
                 await release.wait()
@@ -259,27 +259,27 @@ def test_run_scoped_factory_closes_once_for_concurrent_callers() -> None:
             environment=spec("envs.dummy:from_episode"),
         )
         navigator = Navigator()
-        factory._run_vln = navigator
-        first = asyncio.create_task(factory.close_run())
+        factory._session_vln = navigator
+        first = asyncio.create_task(factory.close_session())
         await entered.wait()
-        second = asyncio.create_task(factory.close_run())
+        second = asyncio.create_task(factory.close_session())
         release.set()
         await asyncio.gather(first, second)
 
         assert navigator.close_calls == 1
-        assert factory._run_vln is None
+        assert factory._session_vln is None
         assert factory._close_task is None
-        await factory.close_run()
+        await factory.close_session()
         assert navigator.close_calls == 1
 
     asyncio.run(scenario())
 
 
-def test_run_scoped_factory_retains_handle_when_close_fails() -> None:
+def test_session_scoped_factory_retains_handle_when_close_fails() -> None:
     class Navigator:
         close_calls = 0
 
-        async def close_run(self):
+        async def close_session(self):
             self.close_calls += 1
             raise RuntimeError("close failed")
 
@@ -289,28 +289,28 @@ def test_run_scoped_factory_retains_handle_when_close_fails() -> None:
             environment=spec("envs.dummy:from_episode"),
         )
         navigator = Navigator()
-        factory._run_vln = navigator
+        factory._session_vln = navigator
 
         with pytest.raises(RuntimeError, match="close failed"):
-            await factory.close_run()
-        assert factory._run_vln is navigator
+            await factory.close_session()
+        assert factory._session_vln is navigator
         assert factory._close_task is not None
         with pytest.raises(HarnessError, match="close is still"):
             factory(next(iter(factory_case_source().cases())).environment_episode)
         with pytest.raises(RuntimeError, match="close failed"):
-            await factory.close_run()
+            await factory.close_session()
         assert navigator.close_calls == 2
 
     asyncio.run(scenario())
 
 
-def test_run_scoped_factory_preserves_cancellation_when_close_fails() -> None:
+def test_session_scoped_factory_preserves_cancellation_when_close_fails() -> None:
     async def scenario():
         entered = asyncio.Event()
         release = asyncio.Event()
 
         class Navigator:
-            async def close_run(self):
+            async def close_session(self):
                 entered.set()
                 await release.wait()
                 raise RuntimeError("cleanup failed")
@@ -319,8 +319,8 @@ def test_run_scoped_factory_preserves_cancellation_when_close_fails() -> None:
             agent=spec("agents.passthrough:PassthroughVLNAgent"),
             environment=spec("envs.dummy:from_episode"),
         )
-        factory._run_vln = Navigator()
-        closing = asyncio.create_task(factory.close_run())
+        factory._session_vln = Navigator()
+        closing = asyncio.create_task(factory.close_session())
         await entered.wait()
         closing.cancel()
         await asyncio.sleep(0)
@@ -331,7 +331,7 @@ def test_run_scoped_factory_preserves_cancellation_when_close_fails() -> None:
             await closing
         assert factory._close_task is not None
         assert isinstance(factory._close_task.exception(), RuntimeError)
-        assert factory._run_vln is not None
+        assert factory._session_vln is not None
 
     asyncio.run(scenario())
 

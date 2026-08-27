@@ -85,7 +85,7 @@ def test_dualvln_real_trace_is_internally_consistent() -> None:
     assert trace["cleanup_errors"] == []
 
 
-def test_three_case_run_scope_traces_are_internally_consistent() -> None:
+def test_three_case_session_scope_traces_are_internally_consistent() -> None:
     expected_models = {
         "streamvln-r2r-val-unseen-run-scope-3.json": "StreamVLN",
         "janusvln-r2r-val-unseen-run-scope-3.json": "JanusVLN_Base",

@@ -78,11 +78,11 @@ def test_component_serial_metadata_is_not_forwarded_to_factory() -> None:
     assert isinstance(spec.create(), PassthroughVLNAgent)
 
 
-def test_component_run_scope_is_metadata_not_a_factory_argument() -> None:
+def test_component_session_scope_is_metadata_not_a_factory_argument() -> None:
     spec = ComponentSpec.from_config(
         {
             "factory": "vln.streamvln:StreamVLNNavigator",
-            "scope": "run",
+            "scope": "session",
             "params": {
                 "command": ["worker"],
                 "upstream_root": "upstream",
@@ -91,7 +91,7 @@ def test_component_run_scope_is_metadata_not_a_factory_argument() -> None:
         }
     )
 
-    assert spec.scope == "run"
+    assert spec.scope == "session"
     assert type(spec.create()).__name__ == "StreamVLNNavigator"
     with pytest.raises(ValueError, match="invalid component scope"):
         ComponentSpec("agents.passthrough:PassthroughVLNAgent", {}, scope="global")

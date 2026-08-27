@@ -9,7 +9,7 @@ from benches.base import BenchmarkCase
 from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
 from harness.errors import HarnessError
-from harness.runner import BenchRunner
+from harness.runner import BenchmarkExecutor
 from schemas import EnvironmentEpisode, NavGoal, NavTask
 
 
@@ -70,7 +70,7 @@ def test_runner_bounds_whole_task_concurrency_and_preserves_order() -> None:
             await context.nav.stop("completed")
 
     async def scenario():
-        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(9),
             lambda episode: stack_for(episode, BlockingAgent()),
             parallelism=3,
@@ -109,7 +109,7 @@ def test_runner_streams_cases_and_does_not_eagerly_consume_split() -> None:
 
     async def scenario():
         execution = asyncio.create_task(
-            BenchRunner(NavigationHarness(timeout_s=2)).run(
+            BenchmarkExecutor(NavigationHarness(timeout_s=2)).run(
                 CasesBenchmark(100, cases()),
                 lambda episode: stack_for(episode, BlockingAgent()),
                 parallelism=2,
@@ -137,7 +137,7 @@ def test_runner_can_bound_a_smoke_run_without_consuming_an_extra_case() -> None:
             yield BenchmarkCase(str(index), NavTask(str(index), goal))
 
     async def scenario():
-        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(10, cases()),
             stack_for,
             parallelism=2,
@@ -156,7 +156,7 @@ def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
         return stack_for(episode)
 
     async def scenario():
-        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(3), factory, parallelism=2
         )
         assert summary.records[0].result is not None
@@ -182,7 +182,7 @@ def test_runner_only_exposes_environment_episode_to_stack_factory() -> None:
         return stack_for(episode)
 
     summary = asyncio.run(
-        BenchRunner(NavigationHarness(timeout_s=1)).run(
+        BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(1, (case,)), factory
         )
     )
@@ -202,14 +202,14 @@ def test_shared_writeback_stack_rejects_parallel_execution() -> None:
 
     async def scenario():
         with pytest.raises(HarnessError, match="requires serial"):
-            await BenchRunner(NavigationHarness()).run(
+            await BenchmarkExecutor(NavigationHarness()).run(
                 CasesBenchmark(1), SerialFactory(), parallelism=2
             )
 
     asyncio.run(scenario())
 
 
-def test_runner_closes_run_scoped_factory_after_all_cases() -> None:
+def test_executor_closes_session_scoped_factory_after_all_cases() -> None:
     class ClosableFactory:
         requires_serial = False
 
@@ -219,12 +219,12 @@ def test_runner_closes_run_scoped_factory_after_all_cases() -> None:
         def __call__(self, case):
             return stack_for(case)
 
-        async def close_run(self):
+        async def close_session(self):
             self.closed = True
 
     async def scenario():
         factory = ClosableFactory()
-        summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(2), factory, parallelism=1
         )
 
@@ -248,7 +248,7 @@ def test_runner_does_not_reflect_an_unrelated_factory_close_method() -> None:
 
     async def scenario():
         factory = Factory()
-        await BenchRunner(NavigationHarness(timeout_s=1)).run(
+        await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(1), factory
         )
         assert factory.close_calls == 0
@@ -256,7 +256,7 @@ def test_runner_does_not_reflect_an_unrelated_factory_close_method() -> None:
     asyncio.run(scenario())
 
 
-def test_runner_closes_run_scope_when_validation_fails() -> None:
+def test_executor_closes_session_scope_when_validation_fails() -> None:
     class SerialFactory:
         requires_serial = True
 
@@ -266,13 +266,13 @@ def test_runner_closes_run_scope_when_validation_fails() -> None:
         def __call__(self, case):
             return stack_for(case)
 
-        async def close_run(self):
+        async def close_session(self):
             self.close_calls += 1
 
     async def scenario():
         factory = SerialFactory()
         with pytest.raises(HarnessError, match="requires serial"):
-            await BenchRunner(NavigationHarness()).run(
+            await BenchmarkExecutor(NavigationHarness()).run(
                 CasesBenchmark(1), factory, parallelism=2
             )
         assert factory.close_calls == 1
@@ -285,11 +285,11 @@ def test_run_cleanup_error_after_success_is_reported_in_summary() -> None:
         def __call__(self, episode):
             return stack_for(episode)
 
-        async def close_run(self):
+        async def close_session(self):
             raise RuntimeError("cleanup failed")
 
     async def scenario():
-        summary = await BenchRunner(NavigationHarness()).run(
+        summary = await BenchmarkExecutor(NavigationHarness()).run(
             CasesBenchmark(1), Factory()
         )
 
@@ -310,12 +310,14 @@ def test_run_cleanup_error_does_not_mask_primary_runner_error() -> None:
         def __call__(self, case):
             return stack_for(case)
 
-        async def close_run(self):
+        async def close_session(self):
             raise RuntimeError("cleanup failed")
 
     async def scenario():
         with pytest.raises(RuntimeError, match="case generation failed") as caught:
-            await BenchRunner(NavigationHarness()).run(BrokenBenchmark(0), Factory())
+            await BenchmarkExecutor(NavigationHarness()).run(
+                BrokenBenchmark(0), Factory()
+            )
         assert caught.value._harness_cleanup_errors == ("RuntimeError: cleanup failed",)
 
     asyncio.run(scenario())

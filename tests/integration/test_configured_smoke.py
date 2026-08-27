@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from harness.app import run_config
+from harness.app import execute_runner
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,13 +18,13 @@ def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
         f"output:\n  root: {tmp_path / 'run'}\n"
     )
 
-    suite, manifest = asyncio.run(
-        run_config(
+    run_summary, manifest = asyncio.run(
+        execute_runner(
             runner,
             ROOT / "config/agents/passthrough.yaml",
         )
     )
-    summary = suite.runs[0]
+    summary = run_summary.benchmarks[0]
     document = json.loads(manifest.read_text())
 
     assert len(summary.records) == 2
@@ -51,16 +51,16 @@ def test_runner_executes_multiple_referenced_benches(tmp_path) -> None:
         f"output:\n  root: {tmp_path / 'multi-run'}\n"
     )
 
-    suite, manifest = asyncio.run(
-        run_config(runner, ROOT / "config/agents/passthrough.yaml")
+    run_summary, manifest = asyncio.run(
+        execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
     )
     document = json.loads(manifest.read_text())
 
-    assert [run.benchmark for run in suite.runs] == [
+    assert [bench.benchmark for bench in run_summary.benchmarks] == [
         "dummy_navigation",
         "dummy_navigation",
     ]
-    assert [len(run.records) for run in suite.runs] == [2, 2]
+    assert [len(bench.records) for bench in run_summary.benchmarks] == [2, 2]
     assert len(document["benchmarks"]) == 2
 
 
@@ -85,12 +85,12 @@ def test_runner_isolates_one_bench_construction_failure(tmp_path) -> None:
         f"output:\n  root: {tmp_path / 'partial-run'}\n"
     )
 
-    suite, manifest = asyncio.run(
-        run_config(runner, ROOT / "config/agents/passthrough.yaml")
+    run_summary, manifest = asyncio.run(
+        execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
     )
     document = json.loads(manifest.read_text())
 
-    failed, completed = suite.runs
+    failed, completed = run_summary.benchmarks
     assert failed.benchmark == "benches.dummy:DummyBenchmark"
     assert failed.split == "broken"
     assert failed.validation_status == "unavailable"

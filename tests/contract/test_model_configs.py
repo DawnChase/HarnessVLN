@@ -43,7 +43,7 @@ def test_agent_profile_owns_vln_configuration(
     navigator = config.vln.create()
 
     assert navigator.model_name == model_name
-    assert config.vln.scope == "run"
+    assert config.vln.scope == "session"
     if model_name != "dualvln":
         assert config.vln.params["worker_options"]["local_files_only"] is True
     assert config.data["provenance"]["checkpoint_revision"] == revision
@@ -117,4 +117,4 @@ def test_smoke_override_bounds_a_full_model_run() -> None:
     resolved = load_runner_config(ROOT / "config/runners/smoke_one.yaml")
 
     assert resolved.settings["max_cases"] == 1
-    assert resolved.data["provenance"]["run_scope"] == "first-case-smoke"
+    assert resolved.data["provenance"]["evaluation_scope"] == "first-case-smoke"

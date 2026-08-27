@@ -1,6 +1,6 @@
 vln:
     factory: vln.dualvln:DualVLNNavigator
-    scope: run
+    scope: session
     params:
       command:
         - python

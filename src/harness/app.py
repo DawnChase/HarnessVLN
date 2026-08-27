@@ -26,7 +26,7 @@ from harness.config import (
 )
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
-from harness.runner import BenchRunner, CaseRecord, RunSummary, SuiteSummary
+from harness.runner import BenchmarkExecutor, BenchmarkSummary, CaseRecord, RunSummary
 from harness.runtime import NavigationHarness, NavigationResult
 from schemas import EnvironmentEpisode, NavGoal, NavTask
 
@@ -37,7 +37,7 @@ class ConfiguredStackFactory:
     environment: ComponentSpec
     vln: ComponentSpec | None = None
     memory: ComponentSpec | None = None
-    _run_vln: Any = field(init=False, default=None, repr=False)
+    _session_vln: Any = field(init=False, default=None, repr=False)
     _close_task: asyncio.Task[None] | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -47,13 +47,15 @@ class ConfiguredStackFactory:
             ("memory", self.memory),
         ):
             if spec is not None and spec.scope != "task":
-                raise HarnessError(f"run-scoped {name} components are not supported")
+                raise HarnessError(
+                    f"session-scoped {name} components are not supported"
+                )
 
     @property
     def requires_serial(self) -> bool:
         components = (self.agent, self.environment, self.vln, self.memory)
         return bool(self.global_serial_reasons) or any(
-            spec and spec.scope == "run" for spec in components
+            spec and spec.scope == "session" for spec in components
         )
 
     @property
@@ -74,18 +76,25 @@ class ConfiguredStackFactory:
 
     def __call__(self, episode: EnvironmentEpisode) -> NavigationStack:
         if self._close_task is not None:
-            raise HarnessError("run-scoped VLN close is still in progress or failed")
-        navigator = self._run_vln
-        if self.vln is not None and self.vln.scope == "run" and navigator is None:
+            raise HarnessError(
+                "session-scoped VLN close is still in progress or failed"
+            )
+        navigator = self._session_vln
+        if (
+            self.vln is not None
+            and self.vln.scope == "session"
+            and navigator is None
+        ):
             navigator = self.vln.create()
-            enable = getattr(navigator, "enable_run_scope", None)
-            close = getattr(navigator, "close_run", None)
+            enable = getattr(navigator, "enable_session_scope", None)
+            close = getattr(navigator, "close_session", None)
             if not callable(enable) or not callable(close):
                 raise HarnessError(
-                    "run-scoped VLN must implement enable_run_scope() and close_run()"
+                    "session-scoped VLN must implement enable_session_scope() "
+                    "and close_session()"
                 )
             enable()
-            self._run_vln = navigator
+            self._session_vln = navigator
         return NavigationStack(
             agent=self.agent.create(),
             environment=self.environment.create(episode=episode),
@@ -97,8 +106,8 @@ class ConfiguredStackFactory:
             memory=self.memory.create() if self.memory else None,
         )
 
-    async def close_run(self) -> None:
-        navigator = self._run_vln
+    async def close_session(self) -> None:
+        navigator = self._session_vln
         if navigator is None:
             return
         if self._close_task is not None and self._close_task.done():
@@ -111,12 +120,12 @@ class ConfiguredStackFactory:
         if self._close_task is None:
 
             async def close_navigator() -> None:
-                result = navigator.close_run()
+                result = navigator.close_session()
                 if inspect.isawaitable(result):
                     await result
 
             self._close_task = asyncio.create_task(
-                close_navigator(), name="run-scoped-vln-close"
+                close_navigator(), name="session-scoped-vln-close"
             )
         close_task = self._close_task
         try:
@@ -126,12 +135,12 @@ class ConfiguredStackFactory:
                 await asyncio.shield(close_task)
             except BaseException as cleanup_error:
                 raise cancellation from cleanup_error
-            if self._run_vln is navigator:
-                self._run_vln = None
+            if self._session_vln is navigator:
+                self._session_vln = None
                 self._close_task = None
             raise cancellation
-        if self._run_vln is navigator:
-            self._run_vln = None
+        if self._session_vln is navigator:
+            self._session_vln = None
             self._close_task = None
 
 
@@ -193,7 +202,7 @@ class InteractiveNavigationSession:
                 return
             self._closed = True
             try:
-                await self._factory.close_run()
+                await self._factory.close_session()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -201,9 +210,9 @@ class InteractiveNavigationSession:
                 raise
 
 
-async def run_config(
+async def execute_runner(
     runner_path: str | Path, agent_path: str | Path
-) -> tuple[SuiteSummary, Path]:
+) -> tuple[RunSummary, Path]:
     runner_config = load_runner_config(runner_path)
     agent_config = load_agent_config(agent_path)
     settings = runner_config.settings
@@ -221,7 +230,7 @@ async def run_config(
         runner_config, stack_factories, bench_parallelism=bench_parallelism
     )
 
-    async def run_bench(index: int) -> tuple[int, RunSummary]:
+    async def run_bench(index: int) -> tuple[int, BenchmarkSummary]:
         config = runner_config.benches[index]
         async with semaphore:
             benchmark: Any | None = None
@@ -231,7 +240,7 @@ async def run_config(
                     raise HarnessError(
                         "configured benchmark does not implement the Benchmark contract"
                     )
-                summary = await BenchRunner(harness).run(
+                summary = await BenchmarkExecutor(harness).run(
                     benchmark,
                     stack_factories[index],
                     parallelism=int(settings.get("task_parallelism", 1)),
@@ -245,38 +254,40 @@ async def run_config(
         *(run_bench(index) for index in range(len(runner_config.benches)))
     )
     indexed.sort(key=lambda item: item[0])
-    suite = SuiteSummary(tuple(summary for _, summary in indexed))
+    run_summary = RunSummary(tuple(summary for _, summary in indexed))
     output_root = Path(runner_config.output.get("root", "runs/latest"))
-    manifest_path = write_manifest(output_root, runner_config, agent_config, suite)
-    return suite, manifest_path
+    manifest_path = write_manifest(
+        output_root, runner_config, agent_config, run_summary
+    )
+    return run_summary, manifest_path
 
 
 def write_manifest(
     output_root: Path,
     runner_config: RunnerConfig,
     agent_config: AgentConfig,
-    summary: SuiteSummary,
+    summary: RunSummary,
 ) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
     metrics: dict[str, list[float]] = {}
     benchmarks = []
-    for run in summary.runs:
+    for benchmark in summary.benchmarks:
         records = []
-        run_metrics: dict[str, list[float]] = {}
-        for record in run.records:
+        benchmark_metrics: dict[str, list[float]] = {}
+        for record in benchmark.records:
             for name, value in record.metrics.items():
                 numeric = float(value)
                 metrics.setdefault(name, []).append(numeric)
-                run_metrics.setdefault(name, []).append(numeric)
+                benchmark_metrics.setdefault(name, []).append(numeric)
             records.append(_record_document(record))
         benchmarks.append(
             {
-                "name": run.benchmark,
-                "split": run.split,
-                "validation_status": run.validation_status,
-                "error": run.error,
-                "cleanup_errors": list(run.cleanup_errors),
-                "aggregate_metrics": _aggregate_metrics(run_metrics),
+                "name": benchmark.benchmark,
+                "split": benchmark.split,
+                "validation_status": benchmark.validation_status,
+                "error": benchmark.error,
+                "cleanup_errors": list(benchmark.cleanup_errors),
+                "aggregate_metrics": _aggregate_metrics(benchmark_metrics),
                 "records": records,
             }
         )
@@ -359,12 +370,12 @@ def _is_benchmark(value: Any) -> bool:
 
 def _failed_benchmark(
     config: BenchmarkConfig, benchmark: Any | None, error: Exception
-) -> RunSummary:
+) -> BenchmarkSummary:
     name = getattr(benchmark, "name", config.benchmark.factory)
     split = getattr(benchmark, "split", config.benchmark.params.get("split", ""))
     validation_status = getattr(benchmark, "validation_status", "unavailable")
     cleanup_errors = tuple(getattr(error, "_harness_cleanup_errors", ()))
-    return RunSummary(
+    return BenchmarkSummary(
         benchmark=str(name),
         split=str(split),
         validation_status=str(validation_status),
@@ -412,7 +423,7 @@ def _aggregate_metrics(values: Mapping[str, list[float]]) -> dict[str, float]:
     }
 
 
-def run_config_sync(
+def execute_runner_sync(
     runner_path: str | Path, agent_path: str | Path
-) -> tuple[SuiteSummary, Path]:
-    return asyncio.run(run_config(runner_path, agent_path))
+) -> tuple[RunSummary, Path]:
+    return asyncio.run(execute_runner(runner_path, agent_path))

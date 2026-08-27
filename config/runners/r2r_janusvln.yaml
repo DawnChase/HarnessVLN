@@ -9,4 +9,4 @@ runner:
 output:
   root: runs/r2r_janusvln
 provenance:
-  run_scope: full-val_unseen
+  evaluation_scope: full-val_unseen
