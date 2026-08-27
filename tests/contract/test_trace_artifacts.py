@@ -3,12 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
+TRACE_ROOT = ROOT / "project-notes/traces"
+pytestmark = pytest.mark.skipif(
+    not TRACE_ROOT.is_dir(),
+    reason="local real-run trace artifacts are not present",
+)
 
 
 def test_streamvln_real_trace_is_internally_consistent() -> None:
-    path = ROOT / "docs/traces/streamvln-r2r-val-unseen-1.json"
+    path = TRACE_ROOT / "streamvln-r2r-val-unseen-1.json"
     trace = json.loads(path.read_text(encoding="utf-8"))
 
     assert trace["schema_version"] == 1
@@ -29,7 +36,7 @@ def test_streamvln_real_trace_is_internally_consistent() -> None:
 
 
 def test_janusvln_real_trace_is_internally_consistent() -> None:
-    path = ROOT / "docs/traces/janusvln-r2r-val-unseen-1.json"
+    path = TRACE_ROOT / "janusvln-r2r-val-unseen-1.json"
     trace = json.loads(path.read_text(encoding="utf-8"))
 
     assert trace["schema_version"] == 1
@@ -51,7 +58,7 @@ def test_janusvln_real_trace_is_internally_consistent() -> None:
 
 
 def test_dualvln_real_trace_is_internally_consistent() -> None:
-    path = ROOT / "docs/traces/dualvln-r2r-val-unseen-1.json"
+    path = TRACE_ROOT / "dualvln-r2r-val-unseen-1.json"
     trace = json.loads(path.read_text(encoding="utf-8"))
 
     assert trace["schema_version"] == 1
@@ -87,7 +94,7 @@ def test_three_case_run_scope_traces_are_internally_consistent() -> None:
 
     for filename, model in expected_models.items():
         trace = json.loads(
-            (ROOT / "docs/traces" / filename).read_text(encoding="utf-8")
+            (TRACE_ROOT / filename).read_text(encoding="utf-8")
         )
 
         assert trace["schema_version"] == 1
