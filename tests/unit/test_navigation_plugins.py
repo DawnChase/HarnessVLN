@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
+import pytest
+
+from agents._jobs import run_vln_job
 from agents import PassthroughVLNAgent
 from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
@@ -12,6 +16,99 @@ from vln import DummyVLNNavigator
 
 def run(coroutine):
     return asyncio.run(coroutine)
+
+
+def test_vln_job_does_not_start_after_task_cancellation() -> None:
+    class Tools:
+        start_calls = 0
+
+        async def start(self, instruction):
+            del instruction
+            self.start_calls += 1
+            return "job"
+
+    async def scenario():
+        cancelled = asyncio.Event()
+        cancelled.set()
+        tools = Tools()
+        context = SimpleNamespace(vln=tools, cancelled=cancelled)
+
+        with pytest.raises(asyncio.CancelledError):
+            await run_vln_job(context, "go", poll_period_s=0)
+        assert tools.start_calls == 0
+
+    run(scenario())
+
+
+def test_vln_job_skips_tool_cancel_during_harness_shutdown() -> None:
+    class Tools:
+        def __init__(self, cancelled):
+            self.cancelled = cancelled
+            self.cancel_calls = 0
+
+        async def start(self, instruction):
+            del instruction
+            return "job"
+
+        async def status(self, job_id):
+            del job_id
+            self.cancelled.set()
+            return {"state": "running"}
+
+        async def cancel(self, job_id):
+            del job_id
+            self.cancel_calls += 1
+
+    async def scenario():
+        cancelled = asyncio.Event()
+        tools = Tools(cancelled)
+        context = SimpleNamespace(vln=tools, cancelled=cancelled)
+
+        with pytest.raises(asyncio.CancelledError):
+            await run_vln_job(context, "go", poll_period_s=0)
+        assert tools.cancel_calls == 0
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("cancel_fails", (False, True))
+def test_independent_vln_job_cancellation_preserves_cancelled_error(
+    cancel_fails: bool,
+) -> None:
+    class Tools:
+        def __init__(self):
+            self.status_entered = asyncio.Event()
+            self.cancel_calls = 0
+
+        async def start(self, instruction):
+            del instruction
+            return "job"
+
+        async def status(self, job_id):
+            del job_id
+            self.status_entered.set()
+            await asyncio.Event().wait()
+
+        async def cancel(self, job_id):
+            del job_id
+            self.cancel_calls += 1
+            if cancel_fails:
+                raise RuntimeError("job cancel failed")
+
+    async def scenario():
+        tools = Tools()
+        context = SimpleNamespace(vln=tools, cancelled=asyncio.Event())
+        execution = asyncio.create_task(
+            run_vln_job(context, "go", poll_period_s=0)
+        )
+        await tools.status_entered.wait()
+        execution.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await execution
+        assert tools.cancel_calls == 1
+
+    run(scenario())
 
 
 def test_passthrough_runs_complete_vln_jobs_across_goals_without_reset() -> None:
@@ -40,6 +137,30 @@ def test_passthrough_runs_complete_vln_jobs_across_goals_without_reset() -> None
             for event in result.audit
         )
         assert result.audit[-1].name == "nav.stop"
+
+    run(scenario())
+
+
+def test_harness_timeout_stops_vln_job_without_closed_cancel_call() -> None:
+    async def scenario():
+        goal = NavGoal("goal", "keep moving")
+        navigator = DummyVLNNavigator(inference_period_s=10)
+        result = await NavigationHarness(timeout_s=0.01).run_task(
+            NavTask("timeout", goal),
+            NavigationStack(
+                PassthroughVLNAgent(poll_period_s=10),
+                DummyNavigationEnvironment((goal,), targets=(100,)),
+                vln=navigator,
+            ),
+        )
+
+        assert result.terminal.status == "timeout"
+        assert "vln.navigate.cancel" not in [event.name for event in result.audit]
+        assert navigator._jobs
+        assert all(
+            job.task is not None and job.task.done()
+            for job in navigator._jobs.values()
+        )
 
     run(scenario())
 
