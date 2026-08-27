@@ -1,6 +1,6 @@
 stack:
   environment:
-    factory: envs.habitat:from_case
+    factory: envs.habitat:from_episode
     params:
       native_factory_params:
         config_values:

@@ -86,7 +86,7 @@ def test_habitat_compound_task_keeps_one_native_session() -> None:
         fixture = compound_case()
         session = FakeHabitatSession()
         environment = HabitatEnvironment(
-            fixture,
+            fixture.environment_episode,
             native_factory=lambda _: session,
             goal_finish_action="SUBTASK_STOP",
             static_channels={"camera_intrinsics": np.eye(4)},
@@ -125,7 +125,7 @@ def test_habitat_compound_task_keeps_one_native_session() -> None:
 
 def test_habitat_profile_does_not_claim_undeclared_channels() -> None:
     environment = HabitatEnvironment(
-        compound_case(),
+        compound_case().environment_episode,
         native_factory=lambda _: FakeHabitatSession(),
         observation_channels=("rgb",),
         expose_pose=False,
@@ -139,7 +139,7 @@ def test_habitat_explicit_noop_is_a_logical_action_without_native_stop() -> None
         fixture = compound_case()
         session = FakeHabitatSession()
         environment = HabitatEnvironment(
-            fixture,
+            fixture.environment_episode,
             native_factory=lambda _: session,
             native_actions={"stand_still": None, "forward": 1},
         )
@@ -175,7 +175,7 @@ def test_habitat_adapter_tracks_oracle_success_from_minimum_distance() -> None:
         fixture = compound_case()
         session = DistanceSession()
         environment = HabitatEnvironment(
-            fixture,
+            fixture.environment_episode,
             native_factory=lambda _: session,
             oracle_success_distance=3.0,
         )

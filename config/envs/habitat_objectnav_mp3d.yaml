@@ -1,6 +1,6 @@
 stack:
   environment:
-    factory: envs.habitat:from_case
+    factory: envs.habitat:from_episode
     params:
       native_factory: envs.habitat:create_native_session
       native_factory_params:
@@ -30,4 +30,3 @@ provenance:
   simulator: Habitat-Lab/Sim 0.3.3
   simulator_commit: acbe6f4922e68145e401e55c30f9dfea460a3f24
   habitat_lab_commit: 094d6be2f9d057e4781a68ae792132895fd4d3d0
-

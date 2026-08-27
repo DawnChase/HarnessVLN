@@ -1,6 +1,6 @@
 stack:
   environment:
-    factory: envs.isaac_vlnverse:from_case
+    factory: envs.isaac_vlnverse:from_episode
     serial: true
     params:
       session_params:

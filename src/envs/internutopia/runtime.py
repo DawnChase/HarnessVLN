@@ -14,8 +14,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Literal
 
-from benches.base import BenchmarkCase
 from harness.errors import HarnessError
+from schemas import EnvironmentEpisode
 
 
 ProjectKind = Literal["internnav", "vlnverse"]
@@ -53,7 +53,7 @@ _PROJECTS: dict[ProjectKind, _ProjectSpec] = {
 
 
 def create_vln_pe_session(
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     scene_data_dir: str | Path,
     robot_usd_path: str | Path,
@@ -64,7 +64,7 @@ def create_vln_pe_session(
     accept_eula: bool = False,
 ) -> Any:
     return _create_session(
-        case,
+        episode,
         project="internnav",
         scene_data_dir=scene_data_dir,
         robot_usd_path=robot_usd_path,
@@ -77,7 +77,7 @@ def create_vln_pe_session(
 
 
 def create_vlnverse_session(
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     scene_data_dir: str | Path,
     robot_usd_path: str | Path,
@@ -90,7 +90,7 @@ def create_vlnverse_session(
     accept_eula: bool = False,
 ) -> Any:
     return _create_session(
-        case,
+        episode,
         project="vlnverse",
         scene_data_dir=scene_data_dir,
         robot_usd_path=robot_usd_path,
@@ -103,7 +103,7 @@ def create_vlnverse_session(
 
 
 def build_native_config(
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     project: ProjectKind,
     scene_data_dir: str | Path,
@@ -137,7 +137,7 @@ def build_native_config(
     eval_cfg = _load_eval_config(config_path)
     eval_cfg = _override_eval_config(
         eval_cfg,
-        case,
+        episode,
         scene_root=scene_root,
         robot_path=robot_path,
         headless=headless,
@@ -160,17 +160,17 @@ def build_native_config(
 
     reviser, skip_list = _episode_rules(project)
     robot_offset = final_cfg.dataset.dataset_settings["robot_offset"]
-    episode, scan = prepare_native_episode(
-        case,
-        dataset_type=str(case.setup["dataset_type"]),
+    native_episode, scan = prepare_native_episode(
+        episode,
+        dataset_type=str(episode.setup["dataset_type"]),
         robot_offset=robot_offset,
         reviser=reviser,
         skip_trajectories=skip_list,
     )
-    path_key = str(case.setup["path_key"])
+    path_key = str(episode.setup["path_key"])
     loader = SimpleNamespace(
         resumed_path_key_list=[path_key],
-        path_key_data={path_key: episode},
+        path_key_data={path_key: native_episode},
         path_key_scan={path_key: scan},
         task_name=final_cfg.task.task_name,
     )
@@ -197,7 +197,7 @@ def build_native_config(
 
 
 def prepare_native_episode(
-    case: BenchmarkCase,
+    environment_episode: EnvironmentEpisode,
     *,
     dataset_type: str,
     robot_offset: Sequence[float],
@@ -206,16 +206,17 @@ def prepare_native_episode(
 ) -> tuple[dict[str, Any], str]:
     """Apply the coordinate conversion used by the pinned upstream loaders."""
 
-    raw = case.setup.get("native_episode")
+    raw = environment_episode.setup.get("native_episode")
     if not isinstance(raw, Mapping):
         raise HarnessError("Isaac case has no native_episode mapping")
     episode = copy.deepcopy(dict(raw))
     trajectory_id = episode.get("trajectory_id")
     episode_id = episode.get("episode_id")
     path_key = f"{trajectory_id}_{episode_id}"
-    if path_key != str(case.setup.get("path_key")):
+    if path_key != str(environment_episode.setup.get("path_key")):
         raise HarnessError(
-            f"Isaac case path_key mismatch: expected {case.setup.get('path_key')}, got {path_key}"
+            "Isaac episode path_key mismatch: expected "
+            f"{environment_episode.setup.get('path_key')}, got {path_key}"
         )
     if trajectory_id in skip_trajectories:
         raise HarnessError(f"Isaac upstream skip list excludes trajectory {trajectory_id}")
@@ -290,7 +291,7 @@ def resource_status(
 
 
 def _create_session(
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     project: ProjectKind,
     scene_data_dir: str | Path,
@@ -304,7 +305,7 @@ def _create_session(
     if accept_eula:
         os.environ.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
     native_config = build_native_config(
-        case,
+        episode,
         project=project,
         scene_data_dir=scene_data_dir,
         robot_usd_path=robot_usd_path,
@@ -326,17 +327,17 @@ def _create_session(
 
 def _override_eval_config(
     eval_cfg: Any,
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     scene_root: Path,
     robot_path: Path,
     headless: bool,
 ) -> Any:
-    split = case.task.public.get("split")
+    split = episode.task.public.get("split")
     if not isinstance(split, str) or not split:
         raise HarnessError("Isaac case has no public split")
     eval_cfg = eval_cfg.model_copy(deep=True)
-    eval_cfg.task.task_name = _task_name(case.case_id)
+    eval_cfg.task.task_name = _task_name(episode.task.task_id)
     eval_cfg.task.scene.scene_data_dir = str(scene_root)
     eval_cfg.task.robot_usd_path = str(robot_path)
     eval_cfg.task.task_settings.update(
@@ -344,10 +345,10 @@ def _override_eval_config(
     )
     eval_cfg.env.env_settings["headless"] = headless
     eval_cfg.env.env_settings.pop("distribution_config", None)
-    eval_cfg.dataset.dataset_type = str(case.setup["dataset_type"])
+    eval_cfg.dataset.dataset_type = str(episode.setup["dataset_type"])
     eval_cfg.dataset.dataset_settings.update(
         {
-            "base_data_dir": str(case.setup["dataset_root"]),
+            "base_data_dir": str(episode.setup["dataset_root"]),
             "split_data_types": [split],
             "filter_same_trajectory": False,
             "filter_stairs": False,

@@ -74,7 +74,7 @@ def test_r2r_environment_composes_with_supported_vln(fragment: str) -> None:
     )
     environment = ComponentSpec.from_config(
         resolved.data["stack"]["environment"]
-    ).create(case=case)
+    ).create(episode=case.environment_episode)
     navigator = ComponentSpec.from_config(resolved.data["stack"]["vln"]).create()
 
     check_navigation_requirements(
@@ -118,7 +118,7 @@ def test_full_r2r_run_configs_satisfy_model_requirements(
     )
     environment = ComponentSpec.from_config(
         resolved.data["stack"]["environment"]
-    ).create(case=case)
+    ).create(episode=case.environment_episode)
     navigator = ComponentSpec.from_config(resolved.data["stack"]["vln"]).create()
 
     check_navigation_requirements(

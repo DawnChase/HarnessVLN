@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from harness.errors import HarnessError, ToolClosedError
 from harness.tool_bus import Tool
 from schemas import (
+    EnvironmentEpisode,
     EnvironmentTerminal,
     MotionProfile,
     NavGoal,
@@ -16,9 +17,6 @@ from schemas import (
     Observation,
     Pose,
 )
-
-if TYPE_CHECKING:
-    from benches.base import BenchmarkCase
 
 
 class DummyNavigationEnvironment:
@@ -201,14 +199,14 @@ class DummyNavigationEnvironment:
             raise ToolClosedError("environment is stopped")
 
 
-def from_case(
-    case: "BenchmarkCase",
+def from_episode(
+    episode: EnvironmentEpisode,
     *,
     start_position: int = 0,
     max_actions_per_goal: int = 500,
 ) -> DummyNavigationEnvironment:
-    goals = case.setup.get("goal_stream", (case.task.goal,))
-    targets = case.setup.get("targets", (case.truth.get("target", 0),))
+    goals = episode.setup.get("goal_stream", (episode.task.goal,))
+    targets = episode.setup.get("targets", (0,))
     return DummyNavigationEnvironment(
         goals,
         targets=targets,

@@ -116,7 +116,7 @@ def test_goat_environment_keeps_session_and_normalizes_per_goal_metrics() -> Non
         case = goat_case()
         session = FakeGOATSession()
         environment = GOATHabitatEnvironment(
-            case,
+            case.environment_episode,
             native_factory=lambda _: session,
             native_actions={"forward": "move_forward"},
             goal_finish_action="subtask_stop",
@@ -162,7 +162,7 @@ def test_goat_config_composes_benchmark_and_environment() -> None:
     benchmark = ComponentSpec.from_config(resolved.data["benchmark"]).create()
     environment = ComponentSpec.from_config(
         resolved.data["stack"]["environment"]
-    ).create(case=goat_case())
+    ).create(episode=goat_case().environment_episode)
 
     assert benchmark.name == "goat_bench"
     assert benchmark.split == "val_unseen"

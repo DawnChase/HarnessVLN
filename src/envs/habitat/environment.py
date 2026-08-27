@@ -7,14 +7,20 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from benches.base import BenchmarkCase
 from harness.config import load_symbol
 from harness.errors import HarnessError, ToolClosedError
 from harness.tool_bus import Tool
-from schemas import EnvironmentTerminal, MotionProfile, NavigationProfile, Observation, Pose
+from schemas import (
+    EnvironmentEpisode,
+    EnvironmentTerminal,
+    MotionProfile,
+    NavigationProfile,
+    Observation,
+    Pose,
+)
 
 
-NativeFactory = Callable[[BenchmarkCase], Any]
+NativeFactory = Callable[[EnvironmentEpisode], Any]
 
 
 class _GymRegistryCompat(dict[Any, Any]):
@@ -28,7 +34,7 @@ class _GymRegistryCompat(dict[Any, Any]):
 class HabitatEnvironment:
     def __init__(
         self,
-        case: BenchmarkCase,
+        episode: EnvironmentEpisode,
         *,
         native_factory: NativeFactory,
         native_actions: Mapping[str, Any] | None = None,
@@ -46,7 +52,7 @@ class HabitatEnvironment:
         camera: Mapping[str, Any] | None = None,
         oracle_success_distance: float | None = None,
     ) -> None:
-        self.case = case
+        self.episode = episode
         self.native_factory = native_factory
         self.native_actions = dict(
             native_actions
@@ -80,7 +86,9 @@ class HabitatEnvironment:
         self._generation = 0
         self._lock = asyncio.Lock()
         self._terminal: asyncio.Future[EnvironmentTerminal] | None = None
-        self._goal_stream = tuple(case.setup.get("goal_stream", (case.task.goal,)))
+        self._goal_stream = tuple(
+            episode.setup.get("goal_stream", (episode.task.goal,))
+        )
         self._goal_index = 0
         self._actions_this_goal = 0
         self._action_count = 0
@@ -93,7 +101,7 @@ class HabitatEnvironment:
         del task
         if self._session is not None:
             raise HarnessError("Habitat environment instances are single-use")
-        self._session = self.native_factory(self.case)
+        self._session = self.native_factory(self.episode)
         self._observation = self._session.reset()
         self._running = True
         self._terminal = asyncio.get_running_loop().create_future()
@@ -298,8 +306,8 @@ class HabitatEnvironment:
             raise ToolClosedError("Habitat environment is stopped")
 
 
-def from_case(
-    case: BenchmarkCase,
+def from_episode(
+    episode: EnvironmentEpisode,
     *,
     native_factory: str,
     native_factory_params: Mapping[str, Any] | None = None,
@@ -307,14 +315,14 @@ def from_case(
 ) -> HabitatEnvironment:
     factory = load_symbol(native_factory)
 
-    def build(private_case: BenchmarkCase) -> Any:
-        return factory(private_case, **dict(native_factory_params or {}))
+    def build(private_episode: EnvironmentEpisode) -> Any:
+        return factory(private_episode, **dict(native_factory_params or {}))
 
-    return HabitatEnvironment(case, native_factory=build, **adapter_params)
+    return HabitatEnvironment(episode, native_factory=build, **adapter_params)
 
 
 def create_native_session(
-    case: BenchmarkCase,
+    runtime_episode: EnvironmentEpisode,
     *,
     config_path: str | Path,
     config_loader: str = "envs.habitat:load_habitat_config",
@@ -353,29 +361,32 @@ def create_native_session(
         env_config = config
     else:
         raise HarnessError("unsupported Habitat config shape")
-    episode_id = case.case_id.rsplit(":", 1)[-1]
+    episode_id = runtime_episode.task.task_id.rsplit(":", 1)[-1]
     matches = [
-        episode
-        for episode in dataset.episodes
-        if str(episode.episode_id) == episode_id
+        native_episode
+        for native_episode in dataset.episodes
+        if str(native_episode.episode_id) == episode_id
         and (
-            case.task.scene_id is None
-            or _same_scene(str(episode.scene_id), case.task.scene_id)
+            runtime_episode.task.scene_id is None
+            or _same_scene(
+                str(native_episode.scene_id), runtime_episode.task.scene_id
+            )
         )
     ]
     if len(matches) != 1:
         raise HarnessError(
-            f"expected one Habitat episode for {case.case_id}, found {len(matches)}"
+            "expected one Habitat episode for "
+            f"{runtime_episode.task.task_id}, found {len(matches)}"
         )
-    episode = matches[0]
+    native_episode = matches[0]
     if scene_id_rewrites:
-        episode.scene_id = _rewrite_prefix(
-            str(episode.scene_id), scene_id_rewrites
+        native_episode.scene_id = _rewrite_prefix(
+            str(native_episode.scene_id), scene_id_rewrites
         )
     if scene_dataset_config is not None and hasattr(
-        episode, "scene_dataset_config"
+        native_episode, "scene_dataset_config"
     ):
-        episode.scene_dataset_config = str(scene_dataset_config)
+        native_episode.scene_dataset_config = str(scene_dataset_config)
     dataset.episodes = matches
     return habitat.Env(config=env_config, dataset=dataset)
 

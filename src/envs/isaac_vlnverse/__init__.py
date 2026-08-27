@@ -1,3 +1,3 @@
-from envs.isaac_vlnverse.environment import from_case
+from envs.isaac_vlnverse.environment import from_episode
 
-__all__ = ["from_case"]
+__all__ = ["from_episode"]

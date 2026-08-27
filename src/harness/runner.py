@@ -10,9 +10,10 @@ from benches.base import Benchmark, BenchmarkCase, MetricSet
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
 from harness.runtime import NavigationHarness, NavigationResult
+from schemas import EnvironmentEpisode
 
 
-StackFactory = Callable[[BenchmarkCase], NavigationStack]
+StackFactory = Callable[[EnvironmentEpisode], NavigationStack]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +76,7 @@ class BenchRunner:
                         return
                     index, case = item
                     try:
-                        stack = stack_factory(case)
+                        stack = stack_factory(case.environment_episode)
                         result = await self.harness.run_task(case.task, stack)
                         metrics = benchmark.score(case, result)
                         record = CaseRecord(index, case.case_id, result, metrics)

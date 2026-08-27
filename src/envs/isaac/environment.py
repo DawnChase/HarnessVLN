@@ -6,10 +6,15 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal, Protocol, cast
 
-from benches.base import BenchmarkCase
 from harness.errors import HarnessError, ToolClosedError
 from harness.tool_bus import Tool
-from schemas import EnvironmentTerminal, MotionProfile, NavigationProfile, Observation
+from schemas import (
+    EnvironmentEpisode,
+    EnvironmentTerminal,
+    MotionProfile,
+    NavigationProfile,
+    Observation,
+)
 
 
 class IsaacSession(Protocol):
@@ -20,7 +25,7 @@ class IsaacSession(Protocol):
     def close(self) -> Any | Awaitable[Any]: ...
 
 
-SessionFactory = Callable[[BenchmarkCase], IsaacSession | Awaitable[IsaacSession]]
+SessionFactory = Callable[[EnvironmentEpisode], IsaacSession | Awaitable[IsaacSession]]
 
 
 class IsaacNavigationEnvironment:
@@ -28,7 +33,7 @@ class IsaacNavigationEnvironment:
 
     def __init__(
         self,
-        case: BenchmarkCase,
+        episode: EnvironmentEpisode,
         *,
         session_factory: SessionFactory,
         native_actions: Mapping[str, Mapping[str, Any]],
@@ -43,7 +48,7 @@ class IsaacNavigationEnvironment:
     ) -> None:
         if max_native_ticks_per_action <= 0:
             raise ValueError("max_native_ticks_per_action must be positive")
-        self.case = case
+        self.episode = episode
         self.session_factory = session_factory
         self.native_actions = dict(native_actions)
         self.warmup_action = dict(warmup_action)
@@ -79,10 +84,10 @@ class IsaacNavigationEnvironment:
     async def start(self, task) -> Sequence[Tool]:
         if self._session is not None:
             raise HarnessError("Isaac environment instances are single-use")
-        if task.goal.goal_id != self.case.task.goal.goal_id:
-            raise HarnessError("task initial goal does not match Isaac case")
+        if task.goal.goal_id != self.episode.task.goal.goal_id:
+            raise HarnessError("task initial goal does not match Isaac episode")
         try:
-            self._session = await _resolve(self.session_factory(self.case))
+            self._session = await _resolve(self.session_factory(self.episode))
             reset_value = await _resolve(self._session.reset())
             self._observation, terminated = self._normalize_reset(reset_value)
             if terminated:
@@ -151,7 +156,7 @@ class IsaacNavigationEnvironment:
             now,
             self.frame,
             channels,
-            extras={"goal_id": self.case.task.goal.goal_id},
+            extras={"goal_id": self.episode.task.goal.goal_id},
         ).as_dict()
 
     async def _move(self, actor: str, arguments: dict[str, Any]) -> dict[str, Any]:

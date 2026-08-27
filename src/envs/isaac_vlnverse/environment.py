@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from benches.base import BenchmarkCase
 from envs.isaac import IsaacNavigationEnvironment
 from harness.config import load_symbol
+from schemas import EnvironmentEpisode
 
 
-def from_case(
-    case: BenchmarkCase,
+def from_episode(
+    episode: EnvironmentEpisode,
     *,
     session_factory: str = "envs.internutopia:create_vlnverse_session",
     session_params: Mapping[str, Any] | None = None,
@@ -18,8 +18,8 @@ def from_case(
 ) -> IsaacNavigationEnvironment:
     factory = load_symbol(session_factory)
 
-    def build(private_case: BenchmarkCase):
-        return factory(private_case, **dict(session_params or {}))
+    def build(private_episode: EnvironmentEpisode):
+        return factory(private_episode, **dict(session_params or {}))
 
     controller = "move_by_flash" if flash else "move_by_discrete"
     actions: dict[str, Mapping[str, Any]] = {
@@ -32,7 +32,7 @@ def from_case(
         "camera", {"height": 480, "width": 640, "hfov_deg": 79, "pitch_deg": -30}
     )
     return IsaacNavigationEnvironment(
-        case,
+        episode,
         session_factory=build,
         native_actions=actions,
         warmup_action={"h1": {"stand_still": []}},

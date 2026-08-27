@@ -148,7 +148,7 @@ def test_config_rejects_run_scope_outside_vln(tmp_path, component_path) -> None:
         "benchmark": {"factory": "benches.dummy:DummyBenchmark", "params": {}},
         "stack": {
             "agent": {"factory": "agents.passthrough:PassthroughVLNAgent"},
-            "environment": {"factory": "envs.dummy:from_case"},
+            "environment": {"factory": "envs.dummy:from_episode"},
             "vln": None,
             "memory": None,
         },

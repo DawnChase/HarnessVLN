@@ -42,7 +42,7 @@ def test_vln_pe_loader_keeps_private_native_episode_and_filters_stairs(tmp_path)
 
     cases = list(VLNPEBenchmark(tmp_path).cases())
 
-    assert [case.setup["path_key"] for case in cases] == ["10_1"]
+    assert [case.env_setup["path_key"] for case in cases] == ["10_1"]
     assert cases[0].task.instruction == "Walk down the hall."
     assert "native_episode" not in cases[0].task.public
     assert cases[0].truth["info"]["geodesic_distance"] == 2.0

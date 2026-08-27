@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeAlias
 
 from harness.runtime import NavigationResult
-from schemas import NavTask
+from schemas import EnvironmentEpisode, NavTask
 
 
 MetricSet: TypeAlias = Mapping[str, float]
@@ -15,8 +15,12 @@ MetricSet: TypeAlias = Mapping[str, float]
 class BenchmarkCase:
     case_id: str
     task: NavTask
-    setup: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    env_setup: Mapping[str, Any] = field(default_factory=dict, repr=False)
     truth: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def environment_episode(self) -> EnvironmentEpisode:
+        return EnvironmentEpisode(self.task, self.env_setup)
 
 
 class Benchmark(Protocol):

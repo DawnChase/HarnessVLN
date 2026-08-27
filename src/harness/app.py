@@ -11,12 +11,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benches.base import Benchmark, BenchmarkCase
+from benches.base import Benchmark
 from harness.config import ComponentSpec, ResolvedConfig, load_config
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
 from harness.runner import BenchRunner, RunSummary
 from harness.runtime import NavigationHarness
+from schemas import EnvironmentEpisode
 
 
 @dataclass(slots=True)
@@ -44,7 +45,7 @@ class ConfiguredStackFactory:
             spec and (spec.serial or spec.scope == "run") for spec in components
         ) or bool(self.memory and self.memory.params.get("writeback", True))
 
-    def __call__(self, case: BenchmarkCase) -> NavigationStack:
+    def __call__(self, episode: EnvironmentEpisode) -> NavigationStack:
         if self._close_task is not None:
             raise HarnessError("run-scoped VLN close is still in progress or failed")
         navigator = self._run_vln
@@ -60,7 +61,7 @@ class ConfiguredStackFactory:
             self._run_vln = navigator
         return NavigationStack(
             agent=self.agent.create(),
-            environment=self.environment.create(case=case),
+            environment=self.environment.create(episode=episode),
             vln=(
                 navigator
                 if navigator is not None

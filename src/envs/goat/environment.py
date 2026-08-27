@@ -9,18 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benches.base import BenchmarkCase
 from envs.habitat import HabitatEnvironment, create_native_session
 from harness.config import load_symbol
+from schemas import EnvironmentEpisode
 
 
 class GOATHabitatEnvironment(HabitatEnvironment):
-    def __init__(self, case: BenchmarkCase, **kwargs: Any) -> None:
+    def __init__(self, episode: EnvironmentEpisode, **kwargs: Any) -> None:
         channels = list(kwargs.pop("observation_channels", ("rgb", "gps", "compass")))
         if "goal_image" not in channels:
             channels.append("goal_image")
-        super().__init__(case, observation_channels=channels, **kwargs)
-        self._goal_specs = tuple(case.setup.get("goal_specs", ()))
+        super().__init__(episode, observation_channels=channels, **kwargs)
+        self._goal_specs = tuple(episode.setup.get("goal_specs", ()))
         if len(self._goal_specs) != len(self._goal_stream):
             raise ValueError("GOAT goal_specs must align with goal_stream")
         self._goal_images: dict[int, Any] = {}
@@ -88,8 +88,8 @@ class GOATHabitatEnvironment(HabitatEnvironment):
         self._goal_results.append(result)
 
 
-def from_case(
-    case: BenchmarkCase,
+def from_episode(
+    episode: EnvironmentEpisode,
     *,
     native_factory: str = "envs.goat:create_goat_session",
     native_factory_params: Mapping[str, Any] | None = None,
@@ -97,14 +97,14 @@ def from_case(
 ) -> GOATHabitatEnvironment:
     factory = load_symbol(native_factory)
 
-    def build(private_case: BenchmarkCase) -> Any:
-        return factory(private_case, **dict(native_factory_params or {}))
+    def build(private_episode: EnvironmentEpisode) -> Any:
+        return factory(private_episode, **dict(native_factory_params or {}))
 
-    return GOATHabitatEnvironment(case, native_factory=build, **adapter_params)
+    return GOATHabitatEnvironment(episode, native_factory=build, **adapter_params)
 
 
 def create_goat_session(
-    case: BenchmarkCase,
+    episode: EnvironmentEpisode,
     *,
     goat_root: str | Path,
     habitat_root: str | Path,
@@ -113,7 +113,7 @@ def create_goat_session(
     scene_dataset_config: str | Path,
 ) -> Any:
     return create_native_session(
-        case,
+        episode,
         config_path=config_path,
         config_loader="envs.goat:load_goat_config",
         config_loader_params={"goat_root": str(goat_root)},

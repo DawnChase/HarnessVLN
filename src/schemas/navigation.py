@@ -70,6 +70,14 @@ class NavTask:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvironmentEpisode:
+    """Task data available to an environment adapter for one episode."""
+
+    task: NavTask
+    setup: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class Observation:
     observation_id: str
     source_time: float

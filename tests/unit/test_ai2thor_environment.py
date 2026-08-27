@@ -102,7 +102,7 @@ def test_robothor_maps_reset_observe_actions_stop_and_result() -> None:
             NavigationStack(
                 Agent(),
                 RoboTHOREnvironment(
-                    fixture,
+                    fixture.environment_episode,
                     controller_kwargs={"width": 640, "height": 480},
                     controller_factory=FakeController,
                 ),
@@ -145,7 +145,7 @@ def test_robothor_optional_depth_pose_and_feedback_are_declared() -> None:
     async def scenario():
         fixture = case()
         environment = RoboTHOREnvironment(
-            fixture,
+            fixture.environment_episode,
             controller_factory=FakeController,
             render_depth=True,
             expose_pose=True,
@@ -185,7 +185,10 @@ def test_failed_native_action_is_not_environment_terminal() -> None:
             fixture.task,
             NavigationStack(
                 Agent(),
-                RoboTHOREnvironment(fixture, controller_factory=FakeController),
+                RoboTHOREnvironment(
+                    fixture.environment_episode,
+                    controller_factory=FakeController,
+                ),
             ),
         )
         assert result.terminal.status == "completed"

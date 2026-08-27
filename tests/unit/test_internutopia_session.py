@@ -45,7 +45,7 @@ def test_mp3d_episode_uses_vln_pe_coordinates_and_robot_offset() -> None:
     )
 
     episode, scan = prepare_native_episode(
-        fixture,
+        fixture.environment_episode,
         dataset_type="mp3d",
         robot_offset=np.array([0.0, 0.0, 1.05]),
     )
@@ -75,7 +75,7 @@ def test_vlnverse_episode_keeps_kujiale_coordinates() -> None:
     )
 
     episode, scan = prepare_native_episode(
-        fixture,
+        fixture.environment_episode,
         dataset_type="kujiale",
         robot_offset=[0.0, 0.0, 1.05],
         reviser=lambda value: value,
@@ -101,12 +101,14 @@ def test_native_episode_rejects_path_key_drift() -> None:
     fixture = BenchmarkCase(
         fixture.case_id,
         fixture.task,
-        {**fixture.setup, "path_key": "wrong"},
+        {**fixture.env_setup, "path_key": "wrong"},
     )
 
     with pytest.raises(HarnessError, match="path_key mismatch"):
         prepare_native_episode(
-            fixture, dataset_type="kujiale", robot_offset=[0, 0, 0]
+            fixture.environment_episode,
+            dataset_type="kujiale",
+            robot_offset=[0, 0, 0],
         )
 
 

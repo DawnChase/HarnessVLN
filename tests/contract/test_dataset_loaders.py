@@ -39,15 +39,15 @@ def test_goat_val_unseen_real_shards_and_private_future_goals() -> None:
     root = require(DATA / "goat_bench" / "hm3d" / "v1")
     benchmark = GOATBenchmark(root, split="val_unseen")
     cases = list(benchmark.cases())
-    goals = [goal for case in cases for goal in case.setup["goal_stream"]]
+    goals = [goal for case in cases for goal in case.env_setup["goal_stream"]]
     modalities = Counter(goal.modality for goal in goals)
 
     assert len(cases) == 360
     assert len({case.case_id for case in cases}) == 360
     assert len(goals) == 2669
     assert modalities == {"object": 991, "image": 822, "description": 856}
-    assert all(5 <= len(case.setup["goal_stream"]) <= 10 for case in cases)
-    assert all(case.task.goal == case.setup["goal_stream"][0] for case in cases)
+    assert all(5 <= len(case.env_setup["goal_stream"]) <= 10 for case in cases)
+    assert all(case.task.goal == case.env_setup["goal_stream"][0] for case in cases)
     assert all("goal_stream" not in case.task.public for case in cases)
     assert all("goal_specs" not in case.task.public for case in cases)
     assert all("native_tasks" not in case.task.public for case in cases)
@@ -60,7 +60,7 @@ def test_goat_val_unseen_real_shards_and_private_future_goals() -> None:
     image_specs = [
         spec
         for case in cases
-        for spec in case.setup["goal_specs"]
+        for spec in case.env_setup["goal_specs"]
         if spec["modality"] == "image"
     ]
     assert len(image_specs) == 822
@@ -80,7 +80,7 @@ def test_robothor_val_real_data_contract() -> None:
     assert len(categories) == 12
     assert all(case.task.goal.instruction.startswith("Find the ") for case in cases)
     assert all(
-        case.case_id == f"robothor:val:{case.setup['episode_id']}" for case in cases
+        case.case_id == f"robothor:val:{case.env_setup['episode_id']}" for case in cases
     )
     assert all("initial_position" not in case.task.public for case in cases)
     assert all(case.truth["shortest_path_length"] >= 0 for case in cases)
@@ -108,6 +108,6 @@ def test_habitat_objectnav_real_shards_use_native_episode_indices(
     assert all("start_position" not in case.task.public for case in cases)
     assert all(case.truth["shortest_path_length"] >= 0 for case in cases)
     assert all(
-        case.case_id.endswith(f":{case.setup['native_episode_index']}")
+        case.case_id.endswith(f":{case.env_setup['native_episode_index']}")
         for case in cases
     )

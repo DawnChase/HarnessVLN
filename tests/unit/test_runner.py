@@ -10,7 +10,7 @@ from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
 from harness.errors import HarnessError
 from harness.runner import BenchRunner
-from schemas import NavGoal, NavTask
+from schemas import EnvironmentEpisode, NavGoal, NavTask
 
 
 class CasesBenchmark:
@@ -42,10 +42,10 @@ class StopAgent:
         await context.nav.stop("completed")
 
 
-def stack_for(case: BenchmarkCase, agent=None):
+def stack_for(episode: EnvironmentEpisode, agent=None):
     return NavigationStack(
         agent or StopAgent(),
-        DummyNavigationEnvironment((case.task.goal,), targets=(0,)),
+        DummyNavigationEnvironment((episode.task.goal,), targets=(0,)),
     )
 
 
@@ -72,7 +72,7 @@ def test_runner_bounds_whole_task_concurrency_and_preserves_order() -> None:
     async def scenario():
         summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
             CasesBenchmark(9),
-            lambda case: stack_for(case, BlockingAgent()),
+            lambda episode: stack_for(episode, BlockingAgent()),
             parallelism=3,
         )
         assert State.maximum == 3
@@ -111,7 +111,7 @@ def test_runner_streams_cases_and_does_not_eagerly_consume_split() -> None:
         execution = asyncio.create_task(
             BenchRunner(NavigationHarness(timeout_s=2)).run(
                 CasesBenchmark(100, cases()),
-                lambda case: stack_for(case, BlockingAgent()),
+                lambda episode: stack_for(episode, BlockingAgent()),
                 parallelism=2,
             )
         )
@@ -150,10 +150,10 @@ def test_runner_can_bound_a_smoke_run_without_consuming_an_extra_case() -> None:
 
 
 def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
-    def factory(case):
-        if case.case_id == "1":
+    def factory(episode):
+        if episode.task.task_id == "1":
             raise ValueError("bad fixture")
-        return stack_for(case)
+        return stack_for(episode)
 
     async def scenario():
         summary = await BenchRunner(NavigationHarness(timeout_s=1)).run(
@@ -165,6 +165,32 @@ def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
         assert summary.records[2].result is not None
 
     asyncio.run(scenario())
+
+
+def test_runner_only_exposes_environment_episode_to_stack_factory() -> None:
+    goal = NavGoal("goal", "stop")
+    case = BenchmarkCase(
+        "case",
+        NavTask("case", goal),
+        {"environment_value": "visible"},
+        {"evaluation_secret": "hidden"},
+    )
+    received = []
+
+    def factory(episode: EnvironmentEpisode):
+        received.append(episode)
+        return stack_for(episode)
+
+    summary = asyncio.run(
+        BenchRunner(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(1, (case,)), factory
+        )
+    )
+
+    assert len(summary.records) == 1
+    assert received == [case.environment_episode]
+    assert received[0].setup == {"environment_value": "visible"}
+    assert not hasattr(received[0], "truth")
 
 
 def test_shared_writeback_stack_rejects_parallel_execution() -> None:

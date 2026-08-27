@@ -1,6 +1,6 @@
 stack:
   environment:
-    factory: envs.goat:from_case
+    factory: envs.goat:from_episode
     params:
       native_factory_params:
         goat_root: cache/upstream/goat_bench

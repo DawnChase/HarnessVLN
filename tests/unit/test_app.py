@@ -17,7 +17,7 @@ def spec(name: str, *, serial: bool = False) -> ComponentSpec:
 def test_stack_factory_propagates_component_serial_constraint() -> None:
     factory = ConfiguredStackFactory(
         agent=spec("agents.passthrough:PassthroughVLNAgent"),
-        environment=spec("envs.isaac_vln_pe:from_case", serial=True),
+        environment=spec("envs.isaac_vln_pe:from_episode", serial=True),
     )
 
     assert factory.requires_serial is True
@@ -26,7 +26,7 @@ def test_stack_factory_propagates_component_serial_constraint() -> None:
 def test_stack_factory_allows_parallel_read_only_components() -> None:
     factory = ConfiguredStackFactory(
         agent=spec("agents.passthrough:PassthroughVLNAgent"),
-        environment=spec("envs.dummy:from_case"),
+        environment=spec("envs.dummy:from_episode"),
     )
 
     assert factory.requires_serial is False
@@ -46,7 +46,7 @@ def test_agent_and_memory_fragments_create_independent_plugins() -> None:
         )
     )
     factory = _stack_factory(resolved.data["stack"])
-    stack = factory(next(iter(factory_case_source().cases())))
+    stack = factory(next(iter(factory_case_source().cases())).environment_episode)
 
     assert type(stack.agent).__name__ == "NormalAgent"
     assert type(stack.memory).__name__ == "DummyLandmarkMemory"
@@ -59,7 +59,7 @@ def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
     checkpoint.write_text("fixture")
     factory = ConfiguredStackFactory(
         agent=spec("agents.passthrough:PassthroughVLNAgent"),
-        environment=spec("envs.dummy:from_case"),
+        environment=spec("envs.dummy:from_episode"),
         vln=ComponentSpec(
             "vln.rpc:RPCVLNNavigator",
             {
@@ -71,13 +71,13 @@ def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
         ),
     )
     cases = list(factory_case_source().cases())
-    first = factory(cases[0])
-    second = factory(cases[0])
+    first = factory(cases[0].environment_episode)
+    second = factory(cases[0].environment_episode)
 
     assert first.vln is second.vln
     assert factory.requires_serial
     asyncio.run(factory.close_run())
-    third = factory(cases[0])
+    third = factory(cases[0].environment_episode)
     assert third.vln is not first.vln
     asyncio.run(factory.close_run())
 
@@ -88,7 +88,7 @@ def test_run_scope_is_rejected_for_task_owned_components() -> None:
             agent=ComponentSpec(
                 "agents.passthrough:PassthroughVLNAgent", {}, scope="run"
             ),
-            environment=spec("envs.dummy:from_case"),
+            environment=spec("envs.dummy:from_episode"),
         )
 
 
@@ -107,7 +107,7 @@ def test_run_scoped_factory_closes_once_for_concurrent_callers() -> None:
 
         factory = ConfiguredStackFactory(
             agent=spec("agents.passthrough:PassthroughVLNAgent"),
-            environment=spec("envs.dummy:from_case"),
+            environment=spec("envs.dummy:from_episode"),
         )
         navigator = Navigator()
         factory._run_vln = navigator
@@ -137,7 +137,7 @@ def test_run_scoped_factory_retains_handle_when_close_fails() -> None:
     async def scenario():
         factory = ConfiguredStackFactory(
             agent=spec("agents.passthrough:PassthroughVLNAgent"),
-            environment=spec("envs.dummy:from_case"),
+            environment=spec("envs.dummy:from_episode"),
         )
         navigator = Navigator()
         factory._run_vln = navigator
@@ -147,7 +147,7 @@ def test_run_scoped_factory_retains_handle_when_close_fails() -> None:
         assert factory._run_vln is navigator
         assert factory._close_task is not None
         with pytest.raises(HarnessError, match="close is still"):
-            factory(next(iter(factory_case_source().cases())))
+            factory(next(iter(factory_case_source().cases())).environment_episode)
         with pytest.raises(RuntimeError, match="close failed"):
             await factory.close_run()
         assert navigator.close_calls == 2
@@ -168,7 +168,7 @@ def test_run_scoped_factory_preserves_cancellation_when_close_fails() -> None:
 
         factory = ConfiguredStackFactory(
             agent=spec("agents.passthrough:PassthroughVLNAgent"),
-            environment=spec("envs.dummy:from_case"),
+            environment=spec("envs.dummy:from_episode"),
         )
         factory._run_vln = Navigator()
         closing = asyncio.create_task(factory.close_run())

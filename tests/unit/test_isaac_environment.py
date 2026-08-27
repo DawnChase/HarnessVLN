@@ -77,7 +77,7 @@ def test_isaac_action_barrier_and_private_native_metrics() -> None:
         fixture = case()
         session = FakeIsaacSession()
         environment = IsaacNavigationEnvironment(
-            fixture,
+            fixture.environment_episode,
             session_factory=lambda _: session,
             native_actions={
                 "forward": {"h1": {"move_by_discrete": [1]}},
@@ -125,7 +125,7 @@ def test_isaac_unexpected_native_terminal_preempts_agent() -> None:
     async def scenario():
         fixture = case()
         environment = IsaacNavigationEnvironment(
-            fixture,
+            fixture.environment_episode,
             session_factory=lambda _: TerminalSession(),
             native_actions={"forward": {"h1": {"move_by_discrete": [1]}}},
             warmup_action={"h1": {"stand_still": []}},
@@ -150,7 +150,9 @@ def test_dualvln_isaac_entries_declare_standstill_and_camera(
 ) -> None:
     monkeypatch.setattr(module, "load_symbol", lambda _: lambda case: FakeIsaacSession())
 
-    environment = module.from_case(case(), session_factory="fixture:factory")
+    environment = module.from_episode(
+        case().environment_episode, session_factory="fixture:factory"
+    )
 
     assert environment.native_actions["stand_still"] == {"h1": {"stand_still": []}}
     assert environment.native_actions["forward"] == {

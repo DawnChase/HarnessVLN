@@ -6,10 +6,16 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal
 
-from benches.base import BenchmarkCase
 from harness.errors import HarnessError, ToolClosedError
 from harness.tool_bus import Tool
-from schemas import EnvironmentTerminal, MotionProfile, NavigationProfile, Observation, Pose
+from schemas import (
+    EnvironmentEpisode,
+    EnvironmentTerminal,
+    MotionProfile,
+    NavigationProfile,
+    Observation,
+    Pose,
+)
 
 
 ControllerFactory = Callable[..., Any]
@@ -26,7 +32,7 @@ class RoboTHOREnvironment:
 
     def __init__(
         self,
-        case: BenchmarkCase,
+        episode: EnvironmentEpisode,
         *,
         controller_kwargs: Mapping[str, Any] | None = None,
         controller_factory: ControllerFactory | None = None,
@@ -35,7 +41,7 @@ class RoboTHOREnvironment:
         expose_pose: bool = False,
         expose_action_feedback: bool = False,
     ) -> None:
-        self.case = case
+        self.episode = episode
         self.controller_kwargs = dict(controller_kwargs or {})
         if render_depth is None:
             render_depth = bool(self.controller_kwargs.get("renderDepthImage", False))
@@ -98,7 +104,7 @@ class RoboTHOREnvironment:
             raise HarnessError("RoboTHOR environment instances are single-use")
         factory = self.controller_factory or self._load_controller_factory()
         self._controller = factory(**self.controller_kwargs)
-        setup = self.case.setup
+        setup = self.episode.setup
         self._controller.initialization_parameters["robothorChallengeEpisodeId"] = (
             setup["episode_id"]
         )
@@ -161,7 +167,7 @@ class RoboTHOREnvironment:
         state = self._agent_state()
         channels = {
             "rgb": self._event.frame,
-            "object_goal": self.case.setup["object_type"],
+            "object_goal": self.episode.setup["object_type"],
         }
         if self.render_depth:
             channels["depth"] = self._event.depth_frame
@@ -242,7 +248,7 @@ class RoboTHOREnvironment:
                     "success": bool(self._event.metadata.get("lastActionSuccess", False)),
                 }
             )
-            category = self.case.setup["object_type"]
+            category = self.episode.setup["object_type"]
             target = next(
                 (
                     item
