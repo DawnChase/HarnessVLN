@@ -146,6 +146,9 @@ class InteractiveNavigationSession:
     )
     _task_index: int = field(init=False, default=0, repr=False)
     _closed: bool = field(init=False, default=False, repr=False)
+    _operation_lock: asyncio.Lock = field(
+        init=False, default_factory=asyncio.Lock, repr=False
+    )
 
     def __post_init__(self) -> None:
         self._factory = _stack_factory(self.agent, self.environment)
@@ -160,34 +163,42 @@ class InteractiveNavigationSession:
         )
 
     async def navigate(self, instruction: str) -> NavigationResult:
-        if self._closed:
-            raise HarnessError("interactive navigation session is closed")
-        instruction = instruction.strip()
-        if not instruction:
-            raise HarnessError("navigation instruction must not be empty")
-        self._task_index += 1
-        task_id = f"interactive:{self._session_id}:{self._task_index}"
-        options = self.environment.interactive
-        goal = NavGoal(
-            f"{task_id}:goal:0",
-            instruction,
-            str(options.get("goal_modality", "language")),
-            dict(options.get("goal_public", {})),
-        )
-        task = NavTask(
-            task_id,
-            goal,
-            scene_id=options.get("scene_id"),
-            public=dict(options.get("task_public", {})),
-        )
-        episode = EnvironmentEpisode(task, dict(options.get("setup", {})))
-        return await self.harness.run_task(task, self._factory(episode))
+        async with self._operation_lock:
+            if self._closed:
+                raise HarnessError("interactive navigation session is closed")
+            instruction = instruction.strip()
+            if not instruction:
+                raise HarnessError("navigation instruction must not be empty")
+            self._task_index += 1
+            task_id = f"interactive:{self._session_id}:{self._task_index}"
+            options = self.environment.interactive
+            goal = NavGoal(
+                f"{task_id}:goal:0",
+                instruction,
+                str(options.get("goal_modality", "language")),
+                dict(options.get("goal_public", {})),
+            )
+            task = NavTask(
+                task_id,
+                goal,
+                scene_id=options.get("scene_id"),
+                public=dict(options.get("task_public", {})),
+            )
+            episode = EnvironmentEpisode(task, dict(options.get("setup", {})))
+            return await self.harness.run_task(task, self._factory(episode))
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        await self._factory.close_run()
+        async with self._operation_lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                await self._factory.close_run()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._closed = False
+                raise
 
 
 async def run_config(

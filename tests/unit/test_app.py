@@ -18,10 +18,32 @@ from harness.config import (
     load_environment_config,
 )
 from harness.errors import HarnessError
+from harness.runtime import NavigationHarness
 
 
 def spec(name: str, *, serial: bool = False) -> ComponentSpec:
     return ComponentSpec(name, {}, serial)
+
+
+class GateHarness:
+    def __init__(self) -> None:
+        self._inner = NavigationHarness(timeout_s=1)
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+        self.active = 0
+        self.maximum = 0
+
+    async def run_task(self, task, stack):
+        self.calls += 1
+        self.active += 1
+        self.maximum = max(self.maximum, self.active)
+        self.entered.set()
+        try:
+            await self.release.wait()
+            return await self._inner.run_task(task, stack)
+        finally:
+            self.active -= 1
 
 
 def test_stack_factory_propagates_component_serial_constraint() -> None:
@@ -81,6 +103,85 @@ def test_interactive_session_turns_each_instruction_into_an_agent_owned_task() -
         ]
         with pytest.raises(HarnessError, match="session is closed"):
             await session.navigate("Run after close.")
+
+    asyncio.run(scenario())
+
+
+def test_interactive_session_serializes_concurrent_instructions() -> None:
+    async def scenario():
+        session = InteractiveNavigationSession.from_configs(
+            "config/envs/dummy.yaml", "config/agents/passthrough.yaml"
+        )
+        harness = GateHarness()
+        session.harness = harness
+
+        first = asyncio.create_task(session.navigate("First instruction."))
+        await harness.entered.wait()
+        second = asyncio.create_task(session.navigate("Second instruction."))
+        await asyncio.sleep(0)
+
+        assert harness.calls == 1
+        harness.release.set()
+        results = await asyncio.gather(first, second)
+        await session.close()
+
+        assert harness.calls == 2
+        assert harness.maximum == 1
+        assert results[0].task_id != results[1].task_id
+
+    asyncio.run(scenario())
+
+
+def test_interactive_close_waits_for_active_navigation() -> None:
+    async def scenario():
+        session = InteractiveNavigationSession.from_configs(
+            "config/envs/dummy.yaml", "config/agents/passthrough.yaml"
+        )
+        harness = GateHarness()
+        session.harness = harness
+
+        navigation = asyncio.create_task(session.navigate("Active instruction."))
+        await harness.entered.wait()
+        closing = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+
+        assert not closing.done()
+        harness.release.set()
+        result = await navigation
+        await closing
+
+        assert result.terminal.status == "completed"
+        with pytest.raises(HarnessError, match="session is closed"):
+            await session.navigate("After close.")
+
+    asyncio.run(scenario())
+
+
+def test_interactive_close_can_retry_after_factory_error() -> None:
+    class FlakyFactory:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def close_run(self) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("close failed")
+
+    async def scenario():
+        session = InteractiveNavigationSession.from_configs(
+            "config/envs/dummy.yaml", "config/agents/passthrough.yaml"
+        )
+        factory = FlakyFactory()
+        session._factory = factory
+
+        with pytest.raises(RuntimeError, match="close failed"):
+            await session.close()
+        assert session._closed is False
+
+        await session.close()
+        await session.close()
+        assert factory.calls == 2
+        assert session._closed is True
 
     asyncio.run(scenario())
 
