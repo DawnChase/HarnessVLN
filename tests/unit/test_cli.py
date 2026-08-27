@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness import cli
-from harness.runner import CaseRecord, RunSummary
+from harness.runner import CaseRecord, RunSummary, SuiteSummary
 from harness.runtime import NavigationResult, Terminal
 
 
@@ -21,17 +21,21 @@ def _result(
 
 
 def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -> None:
-    summary = RunSummary(
-        "bench",
-        "split",
-        "contract",
-        (CaseRecord(0, "case", _result(), {"success": 1.0}),),
+    summary = SuiteSummary(
+        (
+            RunSummary(
+                "bench",
+                "split",
+                "contract",
+                (CaseRecord(0, "case", _result(), {"success": 1.0}),),
+            ),
+        )
     )
     manifest = tmp_path / "manifest.json"
-    received_paths = []
+    received = []
 
-    def run(paths):
-        received_paths.extend(paths)
+    def run(runner, agent):
+        received.extend((runner, agent))
         return summary, manifest
 
     monkeypatch.setattr(cli, "run_config_sync", run)
@@ -39,36 +43,16 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
     assert (
         cli.main(
             [
-                "--benchmark",
-                "bench.yaml",
+                "run",
+                "--runner",
+                "runner.yaml",
                 "--agent",
                 "agent.yaml",
-                "--environment",
-                "env.yaml",
-                "--environment",
-                "env-overlay.yaml",
-                "--vln",
-                "vln.yaml",
-                "--memory",
-                "memory.yaml",
-                "--run",
-                "run.yaml",
-                "--overlay",
-                "smoke.yaml",
             ]
         )
         == 0
     )
-    assert received_paths == [
-        "bench.yaml",
-        "agent.yaml",
-        "env.yaml",
-        "env-overlay.yaml",
-        "vln.yaml",
-        "memory.yaml",
-        "run.yaml",
-        "smoke.yaml",
-    ]
+    assert received == ["runner.yaml", "agent.yaml"]
     assert capsys.readouterr().out.splitlines() == [
         "bench/split: 1 cases, 0 task failures, 0 runner errors, 0 cleanup errors",
         str(manifest.resolve()),
@@ -78,35 +62,38 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
 def test_cli_returns_nonzero_and_separates_failure_kinds(
     monkeypatch, capsys, tmp_path: Path
 ) -> None:
-    summary = RunSummary(
-        "bench",
-        "split",
-        "contract",
+    summary = SuiteSummary(
         (
-            CaseRecord(0, "task-failure", _result("failed"), {}),
-            CaseRecord(1, "runner-error", None, {}, "RuntimeError: failed"),
-            CaseRecord(
-                2,
-                "cleanup-error",
-                _result(cleanup_errors=("environment: cleanup timed out",)),
-                {},
+            RunSummary(
+                "bench",
+                "split",
+                "contract",
+                (
+                    CaseRecord(0, "task-failure", _result("failed"), {}),
+                    CaseRecord(1, "runner-error", None, {}, "RuntimeError: failed"),
+                    CaseRecord(
+                        2,
+                        "cleanup-error",
+                        _result(cleanup_errors=("environment: cleanup timed out",)),
+                        {},
+                    ),
+                ),
             ),
-        ),
+        )
     )
     manifest = tmp_path / "manifest.json"
-    monkeypatch.setattr(cli, "run_config_sync", lambda paths: (summary, manifest))
+    monkeypatch.setattr(
+        cli, "run_config_sync", lambda runner, agent: (summary, manifest)
+    )
 
     assert (
         cli.main(
             [
-                "--benchmark",
-                "bench.yaml",
+                "run",
+                "--runner",
+                "runner.yaml",
                 "--agent",
                 "agent.yaml",
-                "--environment",
-                "env.yaml",
-                "--run",
-                "run.yaml",
             ]
         )
         == 1

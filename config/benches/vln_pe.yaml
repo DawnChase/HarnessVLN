@@ -5,6 +5,7 @@ benchmark:
     split: val_unseen
     filter_same_trajectory: false
     filter_stairs: true
+  environment: ../envs/isaac_vln_pe.yaml
 provenance:
   benchmark: VLN-PE R2R
   dataset_status: missing

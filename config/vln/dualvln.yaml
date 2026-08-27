@@ -1,5 +1,4 @@
-stack:
-  vln:
+vln:
     factory: vln.dualvln:DualVLNNavigator
     scope: run
     params:

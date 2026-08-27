@@ -3,6 +3,7 @@ benchmark:
   params:
     root: data/datasets/robothor-objectnav-2021
     split: val
+  environment: ../envs/robothor.yaml
 provenance:
   benchmark: RoboTHOR ObjectNav 2021
   dataset_commit: f3c4f35bc397aff4d5236e269efe3ff41f6d218e

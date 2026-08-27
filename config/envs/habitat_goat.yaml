@@ -1,5 +1,4 @@
-stack:
-  environment:
+environment:
     factory: envs.goat:from_episode
     params:
       native_factory_params:
@@ -36,10 +35,6 @@ stack:
       forward_m: 0.25
       turn_deg: 30.0
       camera: {height: 640, width: 360, hfov_deg: 42}
-runner:
-  parallelism: 2
-  timeout_s: 7200
-  shutdown_timeout_s: 30
 provenance:
   simulator: Habitat-Lab/Sim 0.3.3
   simulator_commit: acbe6f4922e68145e401e55c30f9dfea460a3f24

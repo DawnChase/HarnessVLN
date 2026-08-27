@@ -1,5 +1,4 @@
-stack:
-  agent:
+agent:
     factory: agents.normal_agent:NormalAgent
     params:
       model: gpt-5-mini
@@ -13,3 +12,5 @@ stack:
         - vln.navigate.cancel
         - spatial.search
         - spatial.remember
+    vln: ../vln/dummy.yaml
+    memory: ../memory/dummy_landmark.yaml

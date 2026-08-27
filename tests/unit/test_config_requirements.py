@@ -7,53 +7,11 @@ import pytest
 from agents import PassthroughVLNAgent
 from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
-from harness.config import ComponentSpec, load_config, overlay
+from harness.config import ComponentSpec, overlay
 from harness.errors import HarnessError
 from harness.requirements import RequirementMismatch, check_navigation_requirements
 from schemas import MotionProfile, NavGoal, NavigationProfile, NavTask
 from vln import DummyVLNNavigator
-
-
-def test_yaml_overlay_recurses_replaces_lists_and_null_disables_plugin(
-    tmp_path,
-) -> None:
-    base = tmp_path / "base.yaml"
-    experiment = tmp_path / "experiment.yaml"
-    base.write_text(
-        """
-benchmark:
-  factory: benches.fake:Benchmark
-  params: {split: val}
-stack:
-  agent:
-    factory: agents.passthrough:PassthroughVLNAgent
-    params: {poll_period_s: 0.1}
-  environment: {factory: envs.fake:Environment}
-  vln: {factory: vln.fake:Navigator, params: {channels: [rgb, depth]}}
-  memory: {factory: memory.fake:Memory}
-runner: {parallelism: 4, timeout_s: 10, seed: 1}
-output: {tags: [base]}
-"""
-    )
-    experiment.write_text(
-        """
-stack:
-  agent: {params: {poll_period_s: 0.01}}
-  vln: {params: {channels: [rgb]}}
-  memory: null
-runner: {parallelism: 2}
-output: {tags: [experiment]}
-"""
-    )
-
-    resolved = load_config((base, experiment))
-    assert resolved.data["stack"]["agent"]["factory"].endswith("PassthroughVLNAgent")
-    assert resolved.data["stack"]["agent"]["params"]["poll_period_s"] == 0.01
-    assert resolved.data["stack"]["vln"]["params"]["channels"] == ["rgb"]
-    assert resolved.data["stack"]["memory"] is None
-    assert resolved.data["runner"]["timeout_s"] == 10
-    assert resolved.data["output"]["tags"] == ["experiment"]
-    assert len(resolved.digest) == 64
 
 
 def test_overlay_does_not_mutate_inputs() -> None:
@@ -137,34 +95,6 @@ def test_component_run_scope_is_metadata_not_a_factory_argument() -> None:
     assert type(spec.create()).__name__ == "StreamVLNNavigator"
     with pytest.raises(ValueError, match="invalid component scope"):
         ComponentSpec("agents.passthrough:PassthroughVLNAgent", {}, scope="global")
-
-
-@pytest.mark.parametrize(
-    "component_path", ["benchmark", "stack.agent", "stack.environment"]
-)
-def test_config_rejects_run_scope_outside_vln(tmp_path, component_path) -> None:
-    config = tmp_path / "scope.yaml"
-    document = {
-        "benchmark": {"factory": "benches.dummy:DummyBenchmark", "params": {}},
-        "stack": {
-            "agent": {"factory": "agents.passthrough:PassthroughVLNAgent"},
-            "environment": {"factory": "envs.dummy:from_episode"},
-            "vln": None,
-            "memory": None,
-        },
-        "runner": {"parallelism": 1},
-    }
-    target = document
-    parts = component_path.split(".")
-    for part in parts:
-        target = target[part]
-    target["scope"] = "run"
-    import yaml
-
-    config.write_text(yaml.safe_dump(document))
-
-    with pytest.raises(HarnessError, match="scope must be task"):
-        load_config((config,))
 
 
 def test_navigation_requirements_compare_semantics_not_only_tool_name() -> None:

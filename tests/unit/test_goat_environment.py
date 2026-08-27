@@ -7,7 +7,7 @@ import numpy as np
 from benches.base import BenchmarkCase
 from envs.goat import GOATHabitatEnvironment
 from harness import NavigationHarness, NavigationStack
-from harness.config import ComponentSpec, load_config
+from harness.config import load_benchmark_config
 from schemas import NavGoal, NavTask
 
 
@@ -151,22 +151,14 @@ def test_goat_environment_keeps_session_and_normalizes_per_goal_metrics() -> Non
 
 
 def test_goat_config_composes_benchmark_and_environment() -> None:
-    resolved = load_config(
-        (
-            "config/benches/goat.yaml",
-            "config/agents/passthrough.yaml",
-            "config/vln/streamvln.yaml",
-            "config/envs/habitat_goat.yaml",
-        )
+    config = load_benchmark_config("config/benches/goat.yaml")
+    benchmark = config.benchmark.create()
+    environment = config.environment.component.create(
+        episode=goat_case().environment_episode
     )
-    benchmark = ComponentSpec.from_config(resolved.data["benchmark"]).create()
-    environment = ComponentSpec.from_config(
-        resolved.data["stack"]["environment"]
-    ).create(episode=goat_case().environment_episode)
 
     assert benchmark.name == "goat_bench"
     assert benchmark.split == "val_unseen"
-    assert resolved.data["runner"]["parallelism"] == 2
     assert environment.profile.observation_channels == frozenset(
         {"rgb", "gps", "compass", "pose", "goal_image"}
     )

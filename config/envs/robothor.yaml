@@ -1,5 +1,4 @@
-stack:
-  environment:
+environment:
     factory: envs.ai2thor:RoboTHOREnvironment
     params:
       controller_kwargs:

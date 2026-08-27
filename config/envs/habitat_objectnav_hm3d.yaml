@@ -1,5 +1,4 @@
-stack:
-  environment:
+environment:
     factory: envs.habitat:from_episode
     params:
       native_factory: envs.habitat:create_native_session
@@ -25,10 +24,6 @@ stack:
       forward_m: 0.25
       turn_deg: 30.0
       camera: {height: 480, width: 640, hfov_deg: 79}
-runner:
-  parallelism: 2
-  timeout_s: 1800
-  shutdown_timeout_s: 30
 provenance:
   simulator: Habitat-Lab/Sim 0.3.3
   simulator_commit: acbe6f4922e68145e401e55c30f9dfea460a3f24

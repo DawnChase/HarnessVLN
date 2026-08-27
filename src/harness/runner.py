@@ -33,6 +33,11 @@ class RunSummary:
     records: tuple[CaseRecord, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SuiteSummary:
+    runs: tuple[RunSummary, ...]
+
+
 class BenchRunner:
     """Bounded parallel scheduling of whole tasks; never observes or acts."""
 

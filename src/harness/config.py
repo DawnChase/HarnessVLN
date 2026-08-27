@@ -4,7 +4,7 @@ import hashlib
 import importlib
 import inspect
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,54 +14,6 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from harness.errors import HarnessError
-
-
-CONFIG_SCHEMA = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "properties": {
-        "benchmark": {"$ref": "#/$defs/component"},
-        "stack": {
-            "type": "object",
-            "properties": {
-                "agent": {"$ref": "#/$defs/component"},
-                "environment": {"$ref": "#/$defs/component"},
-                "vln": {"anyOf": [{"$ref": "#/$defs/component"}, {"type": "null"}]},
-                "memory": {"anyOf": [{"$ref": "#/$defs/component"}, {"type": "null"}]},
-            },
-            "required": ["agent", "environment"],
-            "additionalProperties": False,
-        },
-        "runner": {
-            "type": "object",
-            "properties": {
-                "parallelism": {"type": "integer", "minimum": 1},
-                "max_cases": {"type": "integer", "minimum": 1},
-                "timeout_s": {"type": "number", "exclusiveMinimum": 0},
-                "shutdown_timeout_s": {"type": "number", "exclusiveMinimum": 0},
-                "seed": {"type": "integer"},
-            },
-            "additionalProperties": False,
-        },
-        "output": {"type": "object"},
-        "provenance": {"type": "object"},
-    },
-    "required": ["benchmark", "stack", "runner"],
-    "additionalProperties": False,
-    "$defs": {
-        "component": {
-            "type": "object",
-            "properties": {
-                "factory": {"type": "string", "pattern": "^[^:]+:[^:]+$"},
-                "params": {"type": "object"},
-                "serial": {"type": "boolean"},
-                "scope": {"enum": ["task", "run"]},
-            },
-            "required": ["factory"],
-            "additionalProperties": False,
-        }
-    },
-}
 
 
 def _component_schema(
@@ -222,13 +174,6 @@ class _ConfigDocument:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedConfig:
-    data: dict[str, Any]
-    sources: tuple[str, ...]
-    digest: str
-
-
-@dataclass(frozen=True, slots=True)
 class ComponentSpec:
     factory: str
     params: Mapping[str, Any]
@@ -288,10 +233,16 @@ def load_agent_config(path: str | Path) -> AgentConfig:
         document,
         *(item for item in (vln_document, memory_document) if item),
     )
+    core = ComponentSpec.from_config(component_value)
+    vln = ComponentSpec.from_config(vln_value) if vln_value else None
+    memory = ComponentSpec.from_config(memory_value) if memory_value else None
+    _require_task_scope("agent", core)
+    if memory is not None:
+        _require_task_scope("memory", memory)
     return AgentConfig(
-        core=ComponentSpec.from_config(component_value),
-        vln=ComponentSpec.from_config(vln_value) if vln_value else None,
-        memory=ComponentSpec.from_config(memory_value) if memory_value else None,
+        core=core,
+        vln=vln,
+        memory=memory,
         data=data,
         sources=sources,
         digest=_config_digest(data),
@@ -301,8 +252,10 @@ def load_agent_config(path: str | Path) -> AgentConfig:
 def load_environment_config(path: str | Path) -> EnvironmentConfig:
     document = _load_config_document(path, "environment")
     data = dict(document.data)
+    component = ComponentSpec.from_config(data["environment"])
+    _require_task_scope("environment", component)
     return EnvironmentConfig(
-        component=ComponentSpec.from_config(data["environment"]),
+        component=component,
         interactive=dict(data.get("interactive", {})),
         data=data,
         sources=document.sources,
@@ -325,8 +278,10 @@ def load_benchmark_config(path: str | Path) -> BenchmarkConfig:
         "provenance": provenance,
     }
     sources = _ordered_sources(document, environment)
+    benchmark = ComponentSpec.from_config(component_value)
+    _require_task_scope("benchmark", benchmark)
     return BenchmarkConfig(
-        benchmark=ComponentSpec.from_config(component_value),
+        benchmark=benchmark,
         environment=environment,
         data=data,
         sources=sources,
@@ -360,32 +315,6 @@ def load_runner_config(path: str | Path) -> RunnerConfig:
         sources=sources,
         digest=_config_digest(data),
     )
-
-
-def load_config(paths: Sequence[str | Path]) -> ResolvedConfig:
-    if not paths:
-        raise HarnessError("at least one YAML config path is required")
-    merged: dict[str, Any] = {}
-    sources: list[str] = []
-    for raw_path in paths:
-        path = Path(raw_path).expanduser().resolve()
-        try:
-            value = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as error:
-            raise HarnessError(f"failed to load config {path}: {error}") from error
-        if not isinstance(value, Mapping):
-            raise HarnessError(f"config {path} must contain a mapping")
-        merged = overlay(merged, value)
-        sources.append(str(path))
-    try:
-        Draft202012Validator(CONFIG_SCHEMA).validate(merged)
-    except ValidationError as error:
-        location = ".".join(str(item) for item in error.absolute_path) or "<root>"
-        raise HarnessError(f"invalid config at {location}: {error.message}") from error
-    _validate_component_scopes(merged)
-    canonical = json.dumps(merged, sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    return ResolvedConfig(merged, tuple(sources), digest)
 
 
 _CONFIG_SCHEMAS = {
@@ -489,6 +418,11 @@ def _without_keys(value: Mapping[str, Any], *keys: str) -> dict[str, Any]:
     return {key: item for key, item in value.items() if key not in excluded}
 
 
+def _require_task_scope(name: str, component: ComponentSpec) -> None:
+    if component.scope != "task":
+        raise HarnessError(f"{name} scope must be task")
+
+
 def _merged_provenance(*documents: _ConfigDocument) -> dict[str, Any]:
     value: dict[str, Any] = {}
     for document in documents:
@@ -508,17 +442,6 @@ def _ordered_sources(*configs: Any) -> tuple[str, ...]:
 def _config_digest(value: Mapping[str, Any]) -> str:
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _validate_component_scopes(config: Mapping[str, Any]) -> None:
-    benchmark = config["benchmark"]
-    if benchmark.get("scope", "task") != "task":
-        raise HarnessError("benchmark scope must be task")
-    stack = config["stack"]
-    for name in ("agent", "environment", "memory"):
-        component = stack.get(name)
-        if component is not None and component.get("scope", "task") != "task":
-            raise HarnessError(f"stack.{name} scope must be task")
 
 
 def overlay(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:

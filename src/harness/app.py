@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import os
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benches.base import Benchmark
-from harness.config import ComponentSpec, ResolvedConfig, load_config
+from harness.config import (
+    AgentConfig,
+    ComponentSpec,
+    EnvironmentConfig,
+    RunnerConfig,
+    load_agent_config,
+    load_runner_config,
+    overlay,
+)
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
-from harness.runner import BenchRunner, RunSummary
+from harness.runner import BenchRunner, CaseRecord, RunSummary, SuiteSummary
 from harness.runtime import NavigationHarness
 from schemas import EnvironmentEpisode
 
@@ -108,77 +116,92 @@ class ConfiguredStackFactory:
             self._close_task = None
 
 
-async def run_config(paths: Sequence[str | Path]) -> tuple[RunSummary, Path]:
-    resolved = load_config(paths)
-    data = resolved.data
-    benchmark = ComponentSpec.from_config(data["benchmark"]).create()
-    if not _is_benchmark(benchmark):
-        raise HarnessError(
-            "configured benchmark does not implement the Benchmark contract"
-        )
-    stack = _stack_factory(data["stack"])
-    runner_config = data["runner"]
+async def run_config(
+    runner_path: str | Path, agent_path: str | Path
+) -> tuple[SuiteSummary, Path]:
+    runner_config = load_runner_config(runner_path)
+    agent_config = load_agent_config(agent_path)
+    settings = runner_config.settings
     harness = NavigationHarness(
-        timeout_s=float(runner_config.get("timeout_s", 300)),
-        shutdown_timeout_s=float(runner_config.get("shutdown_timeout_s", 10)),
+        timeout_s=float(settings.get("timeout_s", 300)),
+        shutdown_timeout_s=float(settings.get("shutdown_timeout_s", 10)),
     )
-    summary = await BenchRunner(harness).run(
-        benchmark,
-        stack,
-        parallelism=int(runner_config.get("parallelism", 1)),
-        max_cases=runner_config.get("max_cases"),
+    bench_parallelism = int(settings.get("bench_parallelism", 1))
+    semaphore = asyncio.Semaphore(bench_parallelism)
+
+    async def run_bench(index: int) -> tuple[int, RunSummary]:
+        config = runner_config.benches[index]
+        async with semaphore:
+            benchmark = config.benchmark.create()
+            if not _is_benchmark(benchmark):
+                raise HarnessError(
+                    "configured benchmark does not implement the Benchmark contract"
+                )
+            summary = await BenchRunner(harness).run(
+                benchmark,
+                _stack_factory(agent_config, config.environment),
+                parallelism=int(settings.get("task_parallelism", 1)),
+                max_cases=settings.get("max_cases"),
+            )
+            return index, summary
+
+    indexed = await asyncio.gather(
+        *(run_bench(index) for index in range(len(runner_config.benches)))
     )
-    output_root = Path(data.get("output", {}).get("root", "runs/latest"))
-    manifest_path = write_manifest(output_root, resolved, summary)
-    return summary, manifest_path
+    indexed.sort(key=lambda item: item[0])
+    suite = SuiteSummary(tuple(summary for _, summary in indexed))
+    output_root = Path(runner_config.output.get("root", "runs/latest"))
+    manifest_path = write_manifest(output_root, runner_config, agent_config, suite)
+    return suite, manifest_path
 
 
 def write_manifest(
-    output_root: Path, resolved: ResolvedConfig, summary: RunSummary
+    output_root: Path,
+    runner_config: RunnerConfig,
+    agent_config: AgentConfig,
+    summary: SuiteSummary,
 ) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
     metrics: dict[str, list[float]] = {}
-    records = []
-    for record in summary.records:
-        for name, value in record.metrics.items():
-            metrics.setdefault(name, []).append(float(value))
-        records.append(
+    benchmarks = []
+    for run in summary.runs:
+        records = []
+        run_metrics: dict[str, list[float]] = {}
+        for record in run.records:
+            for name, value in record.metrics.items():
+                numeric = float(value)
+                metrics.setdefault(name, []).append(numeric)
+                run_metrics.setdefault(name, []).append(numeric)
+            records.append(_record_document(record))
+        benchmarks.append(
             {
-                "index": record.index,
-                "case_id": record.case_id,
-                "error": record.error,
-                "metrics": dict(record.metrics),
-                "execution_id": record.result.execution_id if record.result else None,
-                "terminal": asdict(record.result.terminal) if record.result else None,
-                "environment": record.result.environment if record.result else None,
-                "cleanup_errors": (
-                    list(record.result.cleanup_errors) if record.result else []
-                ),
-                "audit": (
-                    [asdict(event) for event in record.result.audit]
-                    if record.result
-                    else []
-                ),
+                "name": run.benchmark,
+                "split": run.split,
+                "validation_status": run.validation_status,
+                "aggregate_metrics": _aggregate_metrics(run_metrics),
+                "records": records,
             }
         )
+    resolved_data = {
+        "runner": dict(runner_config.data),
+        "agent": dict(agent_config.data),
+    }
+    sources = tuple(dict.fromkeys((*runner_config.sources, *agent_config.sources)))
+    canonical = json.dumps(
+        resolved_data, sort_keys=True, separators=(",", ":"), default=_json_default
+    )
     document = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at_unix": time.time(),
-        "config": resolved.data,
-        "config_sources": list(resolved.sources),
-        "config_digest": resolved.digest,
-        "provenance": dict(resolved.data.get("provenance", {})),
-        "benchmark": {
-            "name": summary.benchmark,
-            "split": summary.split,
-            "validation_status": summary.validation_status,
-        },
-        "aggregate_metrics": {
-            name: sum(values) / len(values)
-            for name, values in metrics.items()
-            if values
-        },
-        "records": records,
+        "config": resolved_data,
+        "config_sources": list(sources),
+        "config_digest": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "provenance": overlay(
+            runner_config.data.get("provenance", {}),
+            agent_config.data.get("provenance", {}),
+        ),
+        "aggregate_metrics": _aggregate_metrics(metrics),
+        "benchmarks": benchmarks,
     }
     target = output_root / "manifest.json"
     descriptor, temporary = tempfile.mkstemp(
@@ -197,14 +220,14 @@ def write_manifest(
     return target
 
 
-def _stack_factory(value: Mapping[str, Any]) -> ConfiguredStackFactory:
+def _stack_factory(
+    agent: AgentConfig, environment: EnvironmentConfig
+) -> ConfiguredStackFactory:
     return ConfiguredStackFactory(
-        agent=ComponentSpec.from_config(value["agent"]),
-        environment=ComponentSpec.from_config(value["environment"]),
-        vln=ComponentSpec.from_config(value["vln"]) if value.get("vln") else None,
-        memory=(
-            ComponentSpec.from_config(value["memory"]) if value.get("memory") else None
-        ),
+        agent=agent.core,
+        environment=environment.component,
+        vln=agent.vln,
+        memory=agent.memory,
     )
 
 
@@ -225,5 +248,35 @@ def _json_default(value: Any) -> Any:
     return {"type": type(value).__name__}
 
 
-def run_config_sync(paths: Sequence[str | Path]) -> tuple[RunSummary, Path]:
-    return asyncio.run(run_config(paths))
+def _record_document(record: CaseRecord) -> dict[str, Any]:
+    return {
+        "index": record.index,
+        "case_id": record.case_id,
+        "error": record.error,
+        "metrics": dict(record.metrics),
+        "execution_id": record.result.execution_id if record.result else None,
+        "terminal": asdict(record.result.terminal) if record.result else None,
+        "environment": record.result.environment if record.result else None,
+        "cleanup_errors": (
+            list(record.result.cleanup_errors) if record.result else []
+        ),
+        "audit": (
+            [asdict(event) for event in record.result.audit]
+            if record.result
+            else []
+        ),
+    }
+
+
+def _aggregate_metrics(values: Mapping[str, list[float]]) -> dict[str, float]:
+    return {
+        name: sum(items) / len(items)
+        for name, items in values.items()
+        if items
+    }
+
+
+def run_config_sync(
+    runner_path: str | Path, agent_path: str | Path
+) -> tuple[SuiteSummary, Path]:
+    return asyncio.run(run_config(runner_path, agent_path))

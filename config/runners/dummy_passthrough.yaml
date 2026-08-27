@@ -1,0 +1,12 @@
+runner:
+  benches:
+    - ../benches/dummy.yaml
+  bench_parallelism: 1
+  task_parallelism: 2
+  timeout_s: 10
+  shutdown_timeout_s: 2
+  seed: 7
+output:
+  root: runs/dummy_passthrough
+provenance:
+  run_scope: embedded-smoke-v1

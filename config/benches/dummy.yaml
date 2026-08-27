@@ -9,3 +9,6 @@ benchmark:
       - task_id: backward
         instruction: Move to the marker behind.
         target: -2
+  environment: ../envs/dummy.yaml
+provenance:
+  benchmark: embedded-smoke-v1

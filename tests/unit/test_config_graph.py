@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from harness.config import load_agent_config, load_runner_config
+from harness.config import (
+    load_agent_config,
+    load_benchmark_config,
+    load_environment_config,
+    load_runner_config,
+)
 from harness.errors import HarnessError
 
 
@@ -155,3 +160,46 @@ def test_runner_requires_at_least_one_bench_reference(tmp_path: Path) -> None:
 
     with pytest.raises(HarnessError, match="invalid runner config"):
         load_runner_config(runner)
+
+
+@pytest.mark.parametrize(
+    ("kind", "document", "loader"),
+    (
+        (
+            "agent",
+            "agent: {factory: agents.passthrough:PassthroughVLNAgent, scope: run}\n",
+            load_agent_config,
+        ),
+        (
+            "environment",
+            "environment: {factory: envs.dummy:from_episode, scope: run}\n",
+            load_environment_config,
+        ),
+    ),
+)
+def test_task_owned_components_reject_run_scope(
+    tmp_path: Path, kind: str, document: str, loader
+) -> None:
+    config = write(tmp_path / f"{kind}.yaml", document)
+
+    with pytest.raises(HarnessError, match=f"{kind} scope must be task"):
+        loader(config)
+
+
+def test_benchmark_rejects_run_scope(tmp_path: Path) -> None:
+    write(
+        tmp_path / "env.yaml",
+        "environment: {factory: envs.dummy:from_episode}\n",
+    )
+    benchmark = write(
+        tmp_path / "bench.yaml",
+        """
+benchmark:
+  factory: benches.dummy:DummyBenchmark
+  scope: run
+  environment: env.yaml
+""",
+    )
+
+    with pytest.raises(HarnessError, match="benchmark scope must be task"):
+        load_benchmark_config(benchmark)

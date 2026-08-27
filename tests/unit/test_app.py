@@ -6,7 +6,11 @@ import sys
 import pytest
 
 from harness.app import ConfiguredStackFactory, _stack_factory
-from harness.config import ComponentSpec
+from harness.config import (
+    ComponentSpec,
+    load_agent_config,
+    load_environment_config,
+)
 from harness.errors import HarnessError
 
 
@@ -33,19 +37,10 @@ def test_stack_factory_allows_parallel_read_only_components() -> None:
 
 
 def test_agent_and_memory_fragments_create_independent_plugins() -> None:
-    from harness.config import load_config
-
-    resolved = load_config(
-        (
-            "config/benches/dummy.yaml",
-            "config/agents/normal_agent.yaml",
-            "config/envs/dummy.yaml",
-            "config/vln/dummy.yaml",
-            "config/memory/dummy_landmark.yaml",
-            "config/runs/dummy_normal_agent.yaml",
-        )
+    factory = _stack_factory(
+        load_agent_config("config/agents/normal_agent.yaml"),
+        load_environment_config("config/envs/dummy.yaml"),
     )
-    factory = _stack_factory(resolved.data["stack"])
     stack = factory(next(iter(factory_case_source().cases())).environment_episode)
 
     assert type(stack.agent).__name__ == "NormalAgent"

@@ -4,6 +4,7 @@ benchmark:
     root: data/vlnverse/raw_data/vlnverse/final_splits_with_distance_formal/coarse
     split: val_unseen
     instruction_type: formal
+  environment: ../envs/isaac_vlnverse.yaml
 provenance:
   benchmark: VLNVerse coarse
   dataset_status: missing

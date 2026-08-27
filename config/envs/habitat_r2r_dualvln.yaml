@@ -1,6 +1,5 @@
-stack:
-  environment:
-    factory: envs.habitat:from_episode
+extends: habitat_r2r.yaml
+environment:
     params:
       native_factory_params:
         config_values:
