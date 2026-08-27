@@ -114,8 +114,10 @@ class HabitatObjectNavBenchmark:
             )
         else:
             raise HarnessError("ObjectNav result has neither native SPL nor path length")
+        if "distance_to_goal" not in environment:
+            raise HarnessError("ObjectNav result has no distance to goal")
         return {
             "sr": float(success),
             "spl": spl_value,
-            "ne": float(environment.get("distance_to_goal", float("inf"))),
+            "ne": float(environment["distance_to_goal"]),
         }

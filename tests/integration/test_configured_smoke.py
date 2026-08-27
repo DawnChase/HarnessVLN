@@ -17,6 +17,13 @@ class ScoreFailureBenchmark(DummyBenchmark):
         raise RuntimeError("fixture scoring failed")
 
 
+class PartiallyInvalidMetricBenchmark(DummyBenchmark):
+    def score(self, case, result):
+        if case.case_id == "invalid":
+            return {"success": float("nan")}
+        return super().score(case, result)
+
+
 def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
     runner = tmp_path / "runner.yaml"
     runner.write_text(
@@ -145,3 +152,51 @@ def test_score_failure_manifest_retains_execution_evidence(tmp_path) -> None:
     assert serialized["environment"]["position"] == 0
     assert serialized["audit"][-1]["name"] == "nav.stop"
     assert serialized["metrics"] == {}
+
+
+def test_invalid_metric_is_isolated_before_manifest_aggregation(tmp_path) -> None:
+    benchmark = tmp_path / "partially-invalid-metric-bench.yaml"
+    benchmark.write_text(
+        "benchmark:\n"
+        f"  factory: {__name__}:PartiallyInvalidMetricBenchmark\n"
+        "  params:\n"
+        "    split: fixture\n"
+        "    cases:\n"
+        "      - {task_id: invalid, instruction: Stay., target: 0}\n"
+        "      - {task_id: valid, instruction: Stay., target: 0}\n"
+        f"  environment: {ROOT / 'config/envs/dummy.yaml'}\n"
+    )
+    runner = tmp_path / "partially-invalid-metric-runner.yaml"
+    runner.write_text(
+        "runner:\n"
+        f"  benches: [{benchmark}]\n"
+        "  task_parallelism: 2\n"
+        f"output:\n  root: {tmp_path / 'partially-invalid-metric-run'}\n"
+    )
+
+    run_summary, manifest = asyncio.run(
+        execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
+    )
+
+    def reject_nonstandard_constant(value: str) -> None:
+        raise AssertionError(f"manifest contains non-standard JSON constant: {value}")
+
+    document = json.loads(
+        manifest.read_text(), parse_constant=reject_nonstandard_constant
+    )
+    failed, completed = run_summary.benchmarks[0].records
+    serialized_failed, serialized_completed = document["benchmarks"][0]["records"]
+
+    assert failed.error_stage == "score"
+    assert failed.result is not None
+    assert failed.result.terminal.status == "completed"
+    assert failed.metrics == {}
+    assert completed.error is None
+    assert completed.metrics == {"success": 1.0}
+    assert serialized_failed["error_stage"] == "score"
+    assert serialized_failed["terminal"]["status"] == "completed"
+    assert serialized_failed["metrics"] == {}
+    assert serialized_completed["error_stage"] is None
+    assert serialized_completed["metrics"] == {"success": 1.0}
+    assert document["benchmarks"][0]["aggregate_metrics"] == {"success": 1.0}
+    assert document["aggregate_metrics"] == {"success": 1.0}

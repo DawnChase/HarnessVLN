@@ -210,6 +210,61 @@ def test_score_failure_preserves_navigation_result_and_audit() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("metrics", "message"),
+    (
+        (None, "non-empty metric mapping"),
+        ({}, "non-empty metric mapping"),
+        ({"": 1.0}, "non-empty strings"),
+        ({"success": True}, "must be a real number"),
+        ({"success": "1.0"}, "must be a real number"),
+        ({"success": float("nan")}, "must be finite"),
+        ({"success": float("inf")}, "must be finite"),
+    ),
+)
+def test_invalid_metrics_are_score_errors_with_execution_evidence(
+    metrics, message
+) -> None:
+    class InvalidMetricsBenchmark(CasesBenchmark):
+        def score(self, case, result):
+            del case, result
+            return metrics
+
+    async def scenario():
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
+            InvalidMetricsBenchmark(1), stack_for
+        )
+
+        record = summary.records[0]
+        assert record.result is not None
+        assert record.result.terminal.status == "completed"
+        assert record.error_stage == "score"
+        assert record.error is not None and message in record.error
+        assert record.metrics == {}
+
+    asyncio.run(scenario())
+
+
+def test_invalid_metrics_do_not_cancel_sibling_cases() -> None:
+    class PartiallyInvalidBenchmark(CasesBenchmark):
+        def score(self, case, result):
+            del result
+            return {"success": float("nan")} if case.case_id == "0" else {"success": 1}
+
+    async def scenario():
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
+            PartiallyInvalidBenchmark(2), stack_for, parallelism=2
+        )
+
+        failed, completed = summary.records
+        assert failed.error_stage == "score"
+        assert failed.result is not None
+        assert completed.error is None
+        assert completed.metrics == {"success": 1.0}
+
+    asyncio.run(scenario())
+
+
 def test_case_record_requires_error_and_stage_together() -> None:
     with pytest.raises(ValueError, match="must be set together"):
         CaseRecord(0, "case", None, {}, error="RuntimeError: failed")

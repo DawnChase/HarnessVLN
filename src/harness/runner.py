@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from itertools import islice
+from numbers import Real
 from typing import Literal
 
 from benches.base import Benchmark, BenchmarkCase, MetricSet
@@ -157,7 +159,7 @@ class BenchmarkExecutor:
             return _failed_case(index, case, "execution", error)
 
         try:
-            metrics = benchmark.score(case, result)
+            metrics = _validate_metrics(benchmark.score(case, result))
         except Exception as error:
             return _failed_case(index, case, "score", error, result=result)
         return CaseRecord(index, case.case_id, result, metrics)
@@ -177,6 +179,22 @@ def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> Non
 
 def _error_text(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"
+
+
+def _validate_metrics(metrics: object) -> dict[str, float]:
+    if not isinstance(metrics, Mapping) or not metrics:
+        raise HarnessError("benchmark score must return a non-empty metric mapping")
+    normalized: dict[str, float] = {}
+    for name, value in metrics.items():
+        if not isinstance(name, str) or not name.strip():
+            raise HarnessError("benchmark metric names must be non-empty strings")
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise HarnessError(f"benchmark metric {name!r} must be a real number")
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            raise HarnessError(f"benchmark metric {name!r} must be finite")
+        normalized[name] = numeric
+    return normalized
 
 
 def _failed_case(

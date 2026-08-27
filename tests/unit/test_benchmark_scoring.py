@@ -47,6 +47,10 @@ def test_r2r_score_only_recomputes_spl_with_explicit_path_length() -> None:
     assert benchmark.score(case(), fallback)["spl"] == 0.5
     with pytest.raises(HarnessError, match="neither native SPL nor path length"):
         benchmark.score(case(), missing)
+    with pytest.raises(HarnessError, match="no distance to goal"):
+        benchmark.score(
+            case(), SimpleNamespace(environment={"success": True, "spl": 1.0})
+        )
 
 
 def test_habitat_objectnav_score_prefers_native_metrics() -> None:
@@ -60,3 +64,8 @@ def test_habitat_objectnav_score_prefers_native_metrics() -> None:
         "spl": 0.75,
         "ne": 0.05,
     }
+
+    with pytest.raises(HarnessError, match="no distance to goal"):
+        benchmark.score(
+            case(), SimpleNamespace(environment={"success": True, "spl": 1.0})
+        )

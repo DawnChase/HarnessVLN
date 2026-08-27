@@ -84,9 +84,11 @@ class R2RCEBenchmark:
             )
         else:
             raise HarnessError("R2R-CE result has neither native SPL nor path length")
+        if "distance_to_goal" not in environment:
+            raise HarnessError("R2R-CE result has no distance to goal")
         return {
             "sr": float(success),
             "spl": spl_value,
-            "ne": float(environment.get("distance_to_goal", float("inf"))),
+            "ne": float(environment["distance_to_goal"]),
             "os": float(bool(environment.get("oracle_success", success))),
         }
