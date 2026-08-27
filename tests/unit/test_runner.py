@@ -280,6 +280,26 @@ def test_runner_closes_run_scope_when_validation_fails() -> None:
     asyncio.run(scenario())
 
 
+def test_run_cleanup_error_after_success_is_reported_in_summary() -> None:
+    class Factory:
+        def __call__(self, episode):
+            return stack_for(episode)
+
+        async def close_run(self):
+            raise RuntimeError("cleanup failed")
+
+    async def scenario():
+        summary = await BenchRunner(NavigationHarness()).run(
+            CasesBenchmark(1), Factory()
+        )
+
+        assert len(summary.records) == 1
+        assert summary.error is None
+        assert summary.cleanup_errors == ("RuntimeError: cleanup failed",)
+
+    asyncio.run(scenario())
+
+
 def test_run_cleanup_error_does_not_mask_primary_runner_error() -> None:
     class BrokenBenchmark(CasesBenchmark):
         def cases(self):

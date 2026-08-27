@@ -104,6 +104,45 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
     )
 
 
+def test_cli_reports_bench_level_failure_and_cleanup(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    summary = SuiteSummary(
+        (
+            RunSummary(
+                "broken-bench",
+                "split",
+                "contract",
+                (),
+                error="RuntimeError: case stream failed",
+                cleanup_errors=("RuntimeError: close failed",),
+            ),
+        )
+    )
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(
+        cli, "run_config_sync", lambda runner, agent: (summary, manifest)
+    )
+
+    assert (
+        cli.main(
+            [
+                "run",
+                "--runner",
+                "runner.yaml",
+                "--agent",
+                "agent.yaml",
+            ]
+        )
+        == 1
+    )
+    assert capsys.readouterr().out.splitlines() == [
+        "broken-bench/split: 0 cases, 0 task failures, 1 runner errors, 1 cleanup errors",
+        "  bench error: RuntimeError: case stream failed",
+        str(manifest.resolve()),
+    ]
+
+
 def test_env_cli_sends_instructions_to_the_agent_until_quit(
     monkeypatch, capsys
 ) -> None:

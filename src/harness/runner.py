@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
 
 from benches.base import Benchmark, BenchmarkCase, MetricSet
@@ -31,6 +31,8 @@ class RunSummary:
     split: str
     validation_status: str
     records: tuple[CaseRecord, ...]
+    error: str | None = None
+    cleanup_errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,8 @@ class BenchRunner:
         max_cases: int | None = None,
     ) -> RunSummary:
         run_error: BaseException | None = None
+        summary: RunSummary | None = None
+        cleanup_errors: list[str] = []
         try:
             if parallelism < 1:
                 raise HarnessError("parallelism must be at least 1")
@@ -110,7 +114,7 @@ class BenchRunner:
                 raise
 
             records.sort(key=lambda record: record.index)
-            return RunSummary(
+            summary = RunSummary(
                 benchmark.name,
                 benchmark.split,
                 benchmark.validation_status,
@@ -126,14 +130,20 @@ class BenchRunner:
                     result = close_run()
                     if inspect.isawaitable(result):
                         await result
+                except asyncio.CancelledError:
+                    raise
                 except BaseException as cleanup_error:
                     if run_error is None:
-                        raise
-                    _attach_cleanup_error(run_error, cleanup_error)
+                        cleanup_errors.append(_error_text(cleanup_error))
+                    else:
+                        _attach_cleanup_error(run_error, cleanup_error)
+        if summary is None:  # pragma: no cover - exceptions leave through the except block
+            raise AssertionError("benchmark run completed without a summary")
+        return replace(summary, cleanup_errors=tuple(cleanup_errors))
 
 
 def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> None:
-    message = f"{type(cleanup).__name__}: {cleanup}"
+    message = _error_text(cleanup)
     previous = getattr(primary, "_harness_cleanup_errors", ())
     try:
         setattr(primary, "_harness_cleanup_errors", (*previous, message))
@@ -142,3 +152,7 @@ def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> Non
     add_note = getattr(primary, "add_note", None)
     if callable(add_note):
         add_note(f"Harness run cleanup failed: {message}")
+
+
+def _error_text(error: BaseException) -> str:
+    return f"{type(error).__name__}: {error}"

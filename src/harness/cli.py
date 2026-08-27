@@ -27,6 +27,8 @@ def _run_benchmarks(runner: str, agent: str) -> int:
             f"{len(run.records)} cases, {task_failures} task failures, "
             f"{runner_errors} runner errors, {cleanup_errors} cleanup errors"
         )
+        if run.error is not None:
+            print(f"  bench error: {run.error}")
     print(manifest.resolve())
     return int(failed)
 
@@ -99,8 +101,10 @@ def _failure_counts(summary: RunSummary) -> tuple[int, int, int]:
         record.result is not None and record.result.terminal.status == "failed"
         for record in summary.records
     )
-    runner_errors = sum(record.error is not None for record in summary.records)
-    cleanup_errors = sum(
+    runner_errors = int(summary.error is not None) + sum(
+        record.error is not None for record in summary.records
+    )
+    cleanup_errors = len(summary.cleanup_errors) + sum(
         len(record.result.cleanup_errors)
         for record in summary.records
         if record.result is not None

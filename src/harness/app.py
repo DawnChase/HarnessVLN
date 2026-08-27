@@ -15,6 +15,7 @@ from typing import Any
 
 from harness.config import (
     AgentConfig,
+    BenchmarkConfig,
     ComponentSpec,
     EnvironmentConfig,
     RunnerConfig,
@@ -189,17 +190,21 @@ async def run_config(
     async def run_bench(index: int) -> tuple[int, RunSummary]:
         config = runner_config.benches[index]
         async with semaphore:
-            benchmark = config.benchmark.create()
-            if not _is_benchmark(benchmark):
-                raise HarnessError(
-                    "configured benchmark does not implement the Benchmark contract"
+            benchmark: Any | None = None
+            try:
+                benchmark = config.benchmark.create()
+                if not _is_benchmark(benchmark):
+                    raise HarnessError(
+                        "configured benchmark does not implement the Benchmark contract"
+                    )
+                summary = await BenchRunner(harness).run(
+                    benchmark,
+                    _stack_factory(agent_config, config.environment),
+                    parallelism=int(settings.get("task_parallelism", 1)),
+                    max_cases=settings.get("max_cases"),
                 )
-            summary = await BenchRunner(harness).run(
-                benchmark,
-                _stack_factory(agent_config, config.environment),
-                parallelism=int(settings.get("task_parallelism", 1)),
-                max_cases=settings.get("max_cases"),
-            )
+            except Exception as error:
+                summary = _failed_benchmark(config, benchmark, error)
             return index, summary
 
     indexed = await asyncio.gather(
@@ -235,6 +240,8 @@ def write_manifest(
                 "name": run.benchmark,
                 "split": run.split,
                 "validation_status": run.validation_status,
+                "error": run.error,
+                "cleanup_errors": list(run.cleanup_errors),
                 "aggregate_metrics": _aggregate_metrics(run_metrics),
                 "records": records,
             }
@@ -292,6 +299,23 @@ def _is_benchmark(value: Any) -> bool:
     return all(
         hasattr(value, name)
         for name in ("name", "split", "validation_status", "cases", "score")
+    )
+
+
+def _failed_benchmark(
+    config: BenchmarkConfig, benchmark: Any | None, error: Exception
+) -> RunSummary:
+    name = getattr(benchmark, "name", config.benchmark.factory)
+    split = getattr(benchmark, "split", config.benchmark.params.get("split", ""))
+    validation_status = getattr(benchmark, "validation_status", "unavailable")
+    cleanup_errors = tuple(getattr(error, "_harness_cleanup_errors", ()))
+    return RunSummary(
+        benchmark=str(name),
+        split=str(split),
+        validation_status=str(validation_status),
+        records=(),
+        error=f"{type(error).__name__}: {error}",
+        cleanup_errors=cleanup_errors,
     )
 
 

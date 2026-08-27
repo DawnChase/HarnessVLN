@@ -62,3 +62,43 @@ def test_runner_executes_multiple_referenced_benches(tmp_path) -> None:
     ]
     assert [len(run.records) for run in suite.runs] == [2, 2]
     assert len(document["benchmarks"]) == 2
+
+
+def test_runner_isolates_one_bench_construction_failure(tmp_path) -> None:
+    broken_bench = tmp_path / "broken-bench.yaml"
+    broken_bench.write_text(
+        "benchmark:\n"
+        "  factory: benches.dummy:DummyBenchmark\n"
+        "  params:\n"
+        "    split: broken\n"
+        f"  environment: {ROOT / 'config/envs/dummy.yaml'}\n"
+    )
+    runner = tmp_path / "partially-broken-runner.yaml"
+    runner.write_text(
+        "runner:\n"
+        "  benches:\n"
+        f"    - {broken_bench}\n"
+        f"    - {ROOT / 'config/benches/dummy.yaml'}\n"
+        "  bench_parallelism: 2\n"
+        "  task_parallelism: 1\n"
+        "  timeout_s: 10\n"
+        f"output:\n  root: {tmp_path / 'partial-run'}\n"
+    )
+
+    suite, manifest = asyncio.run(
+        run_config(runner, ROOT / "config/agents/passthrough.yaml")
+    )
+    document = json.loads(manifest.read_text())
+
+    failed, completed = suite.runs
+    assert failed.benchmark == "benches.dummy:DummyBenchmark"
+    assert failed.split == "broken"
+    assert failed.validation_status == "unavailable"
+    assert failed.records == ()
+    assert failed.error is not None and "missing" in failed.error
+    assert completed.error is None
+    assert len(completed.records) == 2
+    assert document["benchmarks"][0]["error"] == failed.error
+    assert document["benchmarks"][0]["records"] == []
+    assert document["benchmarks"][1]["error"] is None
+    assert len(document["benchmarks"][1]["records"]) == 2
