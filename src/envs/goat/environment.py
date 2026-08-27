@@ -109,8 +109,8 @@ def create_goat_session(
     goat_root: str | Path,
     habitat_root: str | Path,
     config_path: str | Path,
-    config_values: Mapping[str, Any],
     scene_dataset_config: str | Path,
+    config_values: Mapping[str, Any] | None = None,
 ) -> Any:
     return create_native_session(
         episode,

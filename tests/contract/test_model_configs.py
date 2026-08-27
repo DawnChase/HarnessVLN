@@ -1,11 +1,13 @@
 from pathlib import Path
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 from benches.base import BenchmarkCase
 from harness.config import (
     load_agent_config,
     load_benchmark_config,
+    load_environment_config,
     load_runner_config,
 )
 from harness.requirements import check_navigation_requirements
@@ -13,6 +15,35 @@ from schemas import NavGoal, NavTask
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize(
+    ("environment_profile", "native_profile"),
+    (
+        ("habitat_r2r.yaml", "r2r.yaml"),
+        ("habitat_r2r_dualvln.yaml", "r2r_dualvln.yaml"),
+        ("habitat_goat.yaml", "goat.yaml"),
+        ("habitat_objectnav_hm3d.yaml", "objectnav_hm3d.yaml"),
+        ("habitat_objectnav_mp3d.yaml", "objectnav_mp3d.yaml"),
+    ),
+)
+def test_habitat_environment_references_native_config(
+    environment_profile: str,
+    native_profile: str,
+) -> None:
+    environment = load_environment_config(
+        ROOT / "config/envs" / environment_profile
+    )
+    native_params = environment.component.params["native_factory_params"]
+    expected = Path("config/envs/habitat") / native_profile
+
+    assert Path(native_params["config_path"]) == expected
+    assert "config_options" not in native_params
+    assert "config_values" not in native_params
+
+    document = yaml.safe_load((ROOT / expected).read_text())
+    assert document["defaults"]
+    assert document["habitat"]
 
 
 @pytest.mark.parametrize(
@@ -105,12 +136,12 @@ def test_full_r2r_run_configs_satisfy_model_requirements(
     )
     assert runner.settings["task_parallelism"] == 1
     assert "max_cases" not in runner.settings
-    assert (
-        bench.environment.component.params["native_factory_params"][
-            "config_values"
-        ]["habitat.task.measurements.success.success_distance"]
-        == 3.0
+    native_config = yaml.safe_load(
+        (ROOT / "config/envs/habitat/r2r.yaml").read_text()
     )
+    assert native_config["habitat"]["task"]["measurements"]["success"][
+        "success_distance"
+    ] == 3.0
 
 
 def test_smoke_override_bounds_a_full_model_run() -> None:
