@@ -167,6 +167,10 @@ def test_tool_bus_validates_schema_permissions_and_write_fence() -> None:
             )
         )
         client = bus.client("agent", frozenset({"nav.write"}))
+        assert [(spec.name, spec.description) for spec in client.specs] == [
+            ("nav.write", "Write.")
+        ]
+        assert client.specs[0].input_schema["required"] == ["value"]
         assert await client.call("nav.write", value=1) == {"actor": "agent", "value": 1}
         with pytest.raises(ToolValidationError):
             await client.call("nav.write", value="bad")

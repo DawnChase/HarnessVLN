@@ -57,15 +57,14 @@ class Tool:
         except SchemaError as error:
             raise ValueError(f"invalid schema for tool {self.name}: {error.message}") from error
 
-    def function_schema(self) -> JsonObject:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.input_schema,
-            },
-        }
+
+@dataclass(frozen=True, slots=True)
+class ToolSpec:
+    """Provider-neutral description exposed to an agent model."""
+
+    name: str
+    description: str
+    input_schema: JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,9 +119,16 @@ class ToolBus:
     async def drain_writes(self) -> None:
         await self._writes_drained.wait()
 
-    def schemas(self, allowed: frozenset[str] | None = None) -> tuple[JsonObject, ...]:
+    def specs(self, allowed: frozenset[str] | None = None) -> tuple[ToolSpec, ...]:
         names = self._tools.keys() if allowed is None else self._tools.keys() & allowed
-        return tuple(self._tools[name].function_schema() for name in sorted(names))
+        return tuple(
+            ToolSpec(
+                name=self._tools[name].name,
+                description=self._tools[name].description,
+                input_schema=self._tools[name].input_schema,
+            )
+            for name in sorted(names)
+        )
 
     async def call(
         self,
@@ -222,8 +228,8 @@ class ToolClient:
         self._allowed = allowed
 
     @property
-    def schemas(self) -> tuple[JsonObject, ...]:
-        return self._bus.schemas(self._allowed)
+    def specs(self) -> tuple[ToolSpec, ...]:
+        return self._bus.specs(self._allowed)
 
     async def call(
         self, name: str, arguments: Mapping[str, Any] | None = None, **kwargs: Any

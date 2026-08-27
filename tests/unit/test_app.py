@@ -38,17 +38,17 @@ def test_agent_and_memory_fragments_create_independent_plugins() -> None:
     resolved = load_config(
         (
             "config/benches/dummy.yaml",
-            "config/agents/subtask.yaml",
+            "config/agents/normal_agent.yaml",
             "config/envs/dummy.yaml",
             "config/vln/dummy.yaml",
             "config/memory/dummy_landmark.yaml",
-            "config/runs/dummy_passthrough.yaml",
+            "config/runs/dummy_normal_agent.yaml",
         )
     )
     factory = _stack_factory(resolved.data["stack"])
     stack = factory(next(iter(factory_case_source().cases())))
 
-    assert type(stack.agent).__name__ == "SubtaskNavigationAgent"
+    assert type(stack.agent).__name__ == "NormalAgent"
     assert type(stack.memory).__name__ == "DummyLandmarkMemory"
     assert factory.requires_serial is True
     assert "spatial.search" in stack.agent.required_tools

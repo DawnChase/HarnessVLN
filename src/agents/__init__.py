@@ -1,9 +1,7 @@
+from agents.normal_agent import NormalAgent
 from agents.passthrough import PassthroughVLNAgent
-from agents.subtask import PlanStep, SentenceDecomposer, SubtaskNavigationAgent
 
 __all__ = [
+    "NormalAgent",
     "PassthroughVLNAgent",
-    "PlanStep",
-    "SentenceDecomposer",
-    "SubtaskNavigationAgent",
 ]

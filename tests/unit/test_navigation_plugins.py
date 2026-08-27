@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
-from agents import PassthroughVLNAgent, PlanStep, SubtaskNavigationAgent
+from agents import PassthroughVLNAgent
 from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
 from memory import DummyLandmarkMemory
@@ -41,38 +40,6 @@ def test_passthrough_runs_complete_vln_jobs_across_goals_without_reset() -> None
             for event in result.audit
         )
         assert result.audit[-1].name == "nav.stop"
-
-    run(scenario())
-
-
-def test_subtask_agent_composes_vln_and_landmark_memory(tmp_path) -> None:
-    async def scenario():
-        goal = NavGoal("goal-1", "reach the kitchen then verify the doorway")
-        task = NavTask(
-            "subtask-1", goal, public={"memory_frame": "dummy_world"}
-        )
-        environment = DummyNavigationEnvironment((goal,), targets=(2,))
-        memory = DummyLandmarkMemory(tmp_path)
-        agent = SubtaskNavigationAgent(
-            lambda instruction: (
-                PlanStep("reach the kitchen"),
-                PlanStep("verify the doorway"),
-            ),
-            poll_period_s=0,
-        )
-        result = await NavigationHarness(timeout_s=1).run_task(
-            task,
-            NavigationStack(agent, environment, DummyVLNNavigator(), memory),
-        )
-
-        assert result.terminal.status == "completed"
-        landmarks = json.loads((tmp_path / "landmarks.json").read_text())
-        assert [item["text"] for item in landmarks] == [
-            "reach the kitchen",
-            "verify the doorway",
-        ]
-        assert all(item["source_task_id"] == "subtask-1" for item in landmarks)
-        assert all(item["frame"] == "dummy_world" for item in landmarks)
 
     run(scenario())
 
