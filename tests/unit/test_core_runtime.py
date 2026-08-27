@@ -143,6 +143,114 @@ def test_missing_agent_tool_fails_before_agent_runs() -> None:
     run(scenario())
 
 
+def test_environment_is_stopped_when_its_start_partially_fails() -> None:
+    class PartialEnvironment(FakeEnvironment):
+        async def start(self, nav_task):
+            del nav_task
+            self.failure = asyncio.get_running_loop().create_future()
+            raise RuntimeError("environment start failed")
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        def __init__(self):
+            self.ran = False
+
+        async def run(self, context):
+            del context
+            self.ran = True
+
+    async def scenario():
+        agent = UnusedAgent()
+        environment = PartialEnvironment()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(agent, environment)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "environment start failed" in result.terminal.reason
+        assert environment.stopped
+        assert agent.ran is False
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
+def test_memory_is_stopped_when_its_start_partially_fails() -> None:
+    class PartialMemory:
+        required_tools = frozenset()
+
+        def __init__(self):
+            self.stopped = False
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+            raise RuntimeError("memory start failed")
+
+        async def stop(self, reason):
+            del reason
+            self.stopped = True
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        async def run(self, context):
+            raise AssertionError(f"agent unexpectedly ran: {context}")
+
+    async def scenario():
+        environment = FakeEnvironment()
+        memory = PartialMemory()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(UnusedAgent(), environment, memory=memory)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "memory start failed" in result.terminal.reason
+        assert memory.stopped
+        assert environment.stopped
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
+def test_vln_is_stopped_when_its_start_partially_fails() -> None:
+    class PartialVLN:
+        required_tools = frozenset()
+        requirements = {}
+
+        def __init__(self):
+            self.stopped = False
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+            raise RuntimeError("vln start failed")
+
+        async def stop(self, reason):
+            del reason
+            self.stopped = True
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        async def run(self, context):
+            raise AssertionError(f"agent unexpectedly ran: {context}")
+
+    async def scenario():
+        environment = FakeEnvironment()
+        navigator = PartialVLN()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(UnusedAgent(), environment, vln=navigator)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "vln start failed" in result.terminal.reason
+        assert navigator.stopped
+        assert environment.stopped
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
 def test_tool_bus_validates_schema_permissions_and_write_fence() -> None:
     async def scenario():
         bus = ToolBus()

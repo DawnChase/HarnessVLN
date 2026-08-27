@@ -224,15 +224,15 @@ class NavigationHarness:
         terminal_task: asyncio.Task[bool] | None = None
         propagate_cancel = False
         try:
-            environment_tools = await stack.environment.start(task)
             started.append("environment")
+            environment_tools = await stack.environment.start(task)
             bus.register(environment_tools)
 
             if stack.memory is not None:
                 bus.require(type(stack.memory).__name__, stack.memory.required_tools)
                 memory_tools = bus.client("memory", stack.memory.required_tools)
-                memory_bindings = await stack.memory.start(task, memory_tools)
                 started.append("memory")
+                memory_bindings = await stack.memory.start(task, memory_tools)
                 bus.register(memory_bindings)
 
             if stack.vln is not None:
@@ -250,8 +250,8 @@ class NavigationHarness:
                     raise HarnessError("VLNNavigator cannot require agent-owned nav.stop")
                 bus.require(type(stack.vln).__name__, stack.vln.required_tools)
                 vln_tools = bus.client("vln", stack.vln.required_tools)
-                vln_bindings = await stack.vln.start(task, vln_tools)
                 started.append("vln")
+                vln_bindings = await stack.vln.start(task, vln_tools)
                 bus.register(vln_bindings)
 
             agent_tools = frozenset(stack.agent.required_tools) | {"nav.stop"}
