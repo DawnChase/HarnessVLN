@@ -11,6 +11,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 
 from harness.errors import (
     DuplicateToolError,
+    HarnessError,
     MissingToolError,
     ToolClosedError,
     ToolValidationError,
@@ -94,14 +95,32 @@ class ToolBus:
     def audit(self) -> tuple[ToolEvent, ...]:
         return tuple(self._events)
 
-    def register(self, tools: Sequence[Tool]) -> None:
-        names = [tool.name for tool in tools]
+    def register(
+        self, tools: Sequence[Tool], *, owner: str = "tool provider"
+    ) -> None:
+        if isinstance(tools, (str, bytes, bytearray)) or not isinstance(
+            tools, Sequence
+        ):
+            raise HarnessError(
+                f"{owner} tools must be a sequence of Tool objects, "
+                f"got {type(tools).__name__}"
+            )
+        batch = tuple(tools)
+        for index, tool in enumerate(batch):
+            if not isinstance(tool, Tool):
+                raise HarnessError(
+                    f"{owner} returned non-Tool at index {index}: "
+                    f"{type(tool).__name__}"
+                )
+        names = [tool.name for tool in batch]
         duplicate_batch = sorted({name for name in names if names.count(name) > 1})
         duplicate_existing = sorted(set(names) & self._tools.keys())
         duplicates = duplicate_batch + duplicate_existing
         if duplicates:
-            raise DuplicateToolError(f"duplicate tools: {sorted(set(duplicates))}")
-        self._tools.update((tool.name, tool) for tool in tools)
+            raise DuplicateToolError(
+                f"{owner} returned duplicate tools: {sorted(set(duplicates))}"
+            )
+        self._tools.update((tool.name, tool) for tool in batch)
 
     def require(self, owner: str, names: set[str] | frozenset[str]) -> None:
         missing = sorted(set(names) - self._tools.keys())

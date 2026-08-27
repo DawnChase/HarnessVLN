@@ -6,7 +6,13 @@ from collections.abc import Sequence
 import pytest
 
 from harness.contracts import NavigationStack
-from harness.errors import HarnessError, MissingToolError, ToolClosedError, ToolValidationError
+from harness.errors import (
+    DuplicateToolError,
+    HarnessError,
+    MissingToolError,
+    ToolClosedError,
+    ToolValidationError,
+)
 from harness.runtime import NavigationHarness
 from harness.tool_bus import Tool, ToolBus
 from schemas import (
@@ -315,6 +321,131 @@ def test_vln_is_stopped_when_its_start_partially_fails() -> None:
     run(scenario())
 
 
+def test_environment_tool_batch_error_stops_partially_started_environment() -> None:
+    class GeneratorEnvironment(FakeEnvironment):
+        async def start(self, nav_task):
+            tools = await super().start(nav_task)
+            return (tool for tool in tools)
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        def __init__(self):
+            self.ran = False
+
+        async def run(self, context):
+            del context
+            self.ran = True
+
+    async def scenario():
+        environment = GeneratorEnvironment()
+        agent = UnusedAgent()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(agent, environment)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "environment GeneratorEnvironment tools must be a sequence" in (
+            result.terminal.reason
+        )
+        assert environment.stopped
+        assert agent.ran is False
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
+def test_memory_non_tool_binding_is_attributed_and_cleaned_up() -> None:
+    class InvalidMemory:
+        required_tools = frozenset()
+
+        def __init__(self):
+            self.stopped = False
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+            return (object(),)
+
+        async def stop(self, reason):
+            del reason
+            self.stopped = True
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        async def run(self, context):
+            raise AssertionError(f"agent unexpectedly ran: {context}")
+
+    async def scenario():
+        environment = FakeEnvironment()
+        memory = InvalidMemory()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(UnusedAgent(), environment, memory=memory)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "memory InvalidMemory returned non-Tool at index 0: object" in (
+            result.terminal.reason
+        )
+        assert memory.stopped
+        assert environment.stopped
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
+def test_vln_duplicate_binding_is_attributed_and_cleaned_up() -> None:
+    class DuplicateVLN:
+        required_tools = frozenset()
+        requirements = {}
+
+        def __init__(self):
+            self.stopped = False
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+
+            async def observe(actor, arguments):
+                del actor, arguments
+                return {}
+
+            return (
+                Tool(
+                    "nav.observe",
+                    "Duplicate observation.",
+                    {"type": "object"},
+                    observe,
+                ),
+            )
+
+        async def stop(self, reason):
+            del reason
+            self.stopped = True
+
+    class UnusedAgent:
+        required_tools = frozenset()
+
+        async def run(self, context):
+            raise AssertionError(f"agent unexpectedly ran: {context}")
+
+    async def scenario():
+        environment = FakeEnvironment()
+        navigator = DuplicateVLN()
+        result = await NavigationHarness(timeout_s=1).run_task(
+            task(), NavigationStack(UnusedAgent(), environment, vln=navigator)
+        )
+
+        assert result.terminal.status == "failed"
+        assert "vln DuplicateVLN returned duplicate tools: ['nav.observe']" in (
+            result.terminal.reason
+        )
+        assert navigator.stopped
+        assert environment.stopped
+        assert result.cleanup_errors == ()
+
+    run(scenario())
+
+
 def test_tool_bus_validates_schema_permissions_and_write_fence() -> None:
     async def scenario():
         bus = ToolBus()
@@ -353,6 +484,39 @@ def test_tool_bus_validates_schema_permissions_and_write_fence() -> None:
             await client.call("nav.write", value=3)
 
     run(scenario())
+
+
+def test_tool_registration_rejects_invalid_batches_atomically() -> None:
+    async def handler(actor, arguments):
+        del actor, arguments
+        return {}
+
+    def make_tool(name):
+        return Tool(name, "Fixture tool.", {"type": "object"}, handler)
+
+    bus = ToolBus()
+    bus.register((make_tool("nav.existing"),), owner="environment fixture")
+
+    with pytest.raises(HarnessError, match="fixture generator.*got generator"):
+        bus.register(
+            (tool for tool in (make_tool("nav.generated"),)),
+            owner="fixture generator",
+        )
+    with pytest.raises(HarnessError, match="memory fixture.*index 1: object"):
+        bus.register(
+            (make_tool("nav.new"), object()),
+            owner="memory fixture",
+        )
+    with pytest.raises(
+        DuplicateToolError,
+        match="vln fixture.*duplicate tools.*nav.existing",
+    ):
+        bus.register(
+            (make_tool("nav.new"), make_tool("nav.existing")),
+            owner="vln fixture",
+        )
+
+    assert [spec.name for spec in bus.specs()] == ["nav.existing"]
 
 
 def test_external_cancellation_cleans_environment_then_propagates() -> None:

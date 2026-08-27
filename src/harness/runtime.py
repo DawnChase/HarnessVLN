@@ -216,7 +216,8 @@ class NavigationHarness:
                     handler=stop_tool,
                     writes=True,
                 ),
-            )
+            ),
+            owner="harness",
         )
 
         agent_task: asyncio.Task[None] | None = None
@@ -233,21 +234,30 @@ class NavigationHarness:
 
             started.append("environment")
             environment_tools = await stack.environment.start(task)
-            bus.register(environment_tools)
+            bus.register(
+                environment_tools,
+                owner=f"environment {type(stack.environment).__name__}",
+            )
 
             if stack.memory is not None:
                 bus.require(type(stack.memory).__name__, stack.memory.required_tools)
                 memory_tools = bus.client("memory", stack.memory.required_tools)
                 started.append("memory")
                 memory_bindings = await stack.memory.start(task, memory_tools)
-                bus.register(memory_bindings)
+                bus.register(
+                    memory_bindings,
+                    owner=f"memory {type(stack.memory).__name__}",
+                )
 
             if stack.vln is not None:
                 bus.require(type(stack.vln).__name__, stack.vln.required_tools)
                 vln_tools = bus.client("vln", stack.vln.required_tools)
                 started.append("vln")
                 vln_bindings = await stack.vln.start(task, vln_tools)
-                bus.register(vln_bindings)
+                bus.register(
+                    vln_bindings,
+                    owner=f"vln {type(stack.vln).__name__}",
+                )
 
             agent_tools = frozenset(stack.agent.required_tools) | {"nav.stop"}
             bus.require(type(stack.agent).__name__, agent_tools)

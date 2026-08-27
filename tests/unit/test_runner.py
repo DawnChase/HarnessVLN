@@ -168,6 +168,44 @@ def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
     asyncio.run(scenario())
 
 
+def test_invalid_environment_tool_batch_does_not_cancel_siblings() -> None:
+    class GeneratorEnvironment(DummyNavigationEnvironment):
+        async def start(self, task):
+            tools = await super().start(task)
+            return (tool for tool in tools)
+
+    def factory(episode):
+        environment_type = (
+            GeneratorEnvironment
+            if episode.task.task_id == "0"
+            else DummyNavigationEnvironment
+        )
+        return NavigationStack(
+            StopAgent(),
+            environment_type((episode.task.goal,), targets=(0,)),
+        )
+
+    async def scenario():
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(2), factory, parallelism=2
+        )
+
+        failed, completed = summary.records
+        assert failed.error is None
+        assert failed.result is not None
+        assert failed.result.terminal.status == "failed"
+        assert "GeneratorEnvironment tools must be a sequence" in (
+            failed.result.terminal.reason
+        )
+        assert failed.metrics == {"completed": 0.0}
+        assert completed.error is None
+        assert completed.result is not None
+        assert completed.result.terminal.status == "completed"
+        assert completed.metrics == {"completed": 1.0}
+
+    asyncio.run(scenario())
+
+
 def test_case_execution_failure_is_classified_before_scoring() -> None:
     class FailingHarness:
         async def run_task(self, task, stack):
