@@ -130,7 +130,24 @@ RUNNER_CONFIG_SCHEMA = {
             "required": ["benches"],
             "additionalProperties": False,
         },
-        "output": {"type": "object"},
+        "output": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "minLength": 1},
+                "run_id": {"type": "string", "minLength": 1},
+                "video": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "required": {"type": "boolean"},
+                        "fps": {"type": "number", "exclusiveMinimum": 0},
+                        "codec": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "additionalProperties": False,
+        },
         "provenance": {"type": "object"},
     },
     "required": ["runner"],

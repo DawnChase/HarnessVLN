@@ -56,7 +56,7 @@ def test_cli_returns_zero_for_a_clean_run(monkeypatch, capsys, tmp_path: Path) -
     assert received == ["runner.yaml", "agent.yaml"]
     assert capsys.readouterr().out.splitlines() == [
         "bench/split: 1 cases, 0 task failures, 0 case errors, 0 bench errors, "
-        "0 cleanup errors",
+        "0 cleanup errors, 0 output errors",
         str(manifest.resolve()),
     ]
 
@@ -71,7 +71,7 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
                 "split",
                 "contract",
                 (
-                    CaseRecord(0, "task-failure", _result("failed"), {}),
+                    CaseRecord(0, "task-failure", _result("timeout"), {}),
                     CaseRecord(
                         1,
                         "case-error",
@@ -85,6 +85,7 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
                         "cleanup-error",
                         _result(cleanup_errors=("environment: cleanup timed out",)),
                         {},
+                        output_errors=("environment.main_camera: encode failed",),
                     ),
                 ),
             ),
@@ -109,7 +110,7 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
     )
     assert capsys.readouterr().out.splitlines()[0] == (
         "bench/split: 3 cases, 1 task failures, 1 case errors, 0 bench errors, "
-        "1 cleanup errors"
+        "1 cleanup errors, 1 output errors"
     )
 
 
@@ -147,7 +148,7 @@ def test_cli_reports_bench_level_failure_and_cleanup(
     )
     assert capsys.readouterr().out.splitlines() == [
         "broken-bench/split: 0 cases, 0 task failures, 0 case errors, "
-        "1 bench errors, 1 cleanup errors",
+        "1 bench errors, 1 cleanup errors, 0 output errors",
         "  bench error: RuntimeError: case stream failed",
         str(manifest.resolve()),
     ]

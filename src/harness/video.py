@@ -103,7 +103,10 @@ class VideoWriter:
     def abort(self) -> None:
         writer, self._writer = self._writer, None
         if writer is not None:
-            writer.close()
+            try:
+                writer.close()
+            except Exception:
+                pass
         self.partial_path.unlink(missing_ok=True)
 
     def record(self, status: str) -> JsonObject:

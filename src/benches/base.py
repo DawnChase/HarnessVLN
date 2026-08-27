@@ -22,6 +22,14 @@ class BenchmarkCase:
     def environment_episode(self) -> EnvironmentEpisode:
         return EnvironmentEpisode(self.task, self.env_setup)
 
+    def output_record(self) -> dict[str, Any]:
+        """Return the Bench-owned, non-evaluation input for this episode."""
+        return {
+            "case_id": self.case_id,
+            "task": self.task,
+            "environment_setup": dict(self.env_setup),
+        }
+
 
 class Benchmark(Protocol):
     name: str

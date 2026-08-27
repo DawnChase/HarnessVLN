@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import numpy as np
 
 from benches.base import BenchmarkCase
 from envs.habitat import HabitatEnvironment, _rewrite_prefix, _same_scene
 from harness import NavigationHarness, NavigationStack
+from harness.output import RunOutput
 from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
 from vln import StreamVLNNavigator
@@ -132,6 +134,63 @@ def test_habitat_profile_does_not_claim_undeclared_channels() -> None:
     )
 
     assert environment.profile.observation_channels == frozenset({"rgb"})
+
+
+def test_habitat_environment_owns_main_camera_video_submission(tmp_path) -> None:
+    class VideoSession(FakeHabitatSession):
+        def _observation(self):
+            value = len(self.actions) * 40
+            return {
+                "rgb": np.full((4, 6, 3), value, dtype=np.uint8),
+                "depth": np.zeros((4, 6), dtype=np.float32),
+                "gps": [1.0, 2.0],
+                "compass": [0.5],
+            }
+
+    class Agent:
+        required_tools = frozenset({"nav.move.discrete"})
+
+        async def run(self, context):
+            await context.nav.move_discrete("forward")
+            await context.nav.stop("completed")
+
+    async def scenario():
+        fixture = compound_case()
+        run_output = RunOutput(
+            {
+                "root": str(tmp_path),
+                "run_id": "habitat-video",
+                "video": {"fps": 5},
+            },
+            resolved_config={},
+            config_sources=(),
+            config_digest="d" * 64,
+            provenance={},
+        )
+        bench_output = run_output.benchmark(0, "habitat", "fixture")
+        episode_output = bench_output.episode(0, fixture.case_id, fixture.output_record())
+        environment = HabitatEnvironment(
+            fixture.environment_episode,
+            native_factory=lambda _: VideoSession(),
+        )
+
+        result = await NavigationHarness(timeout_s=1).run_task(
+            fixture.task,
+            NavigationStack(Agent(), environment),
+            output=episode_output,
+        )
+        assert episode_output.finish({"case_id": fixture.case_id}) == ()
+
+        document = json.loads(
+            (episode_output.path / "environment.json").read_text()
+        )
+        stream = document["streams"]["main_camera"]
+        assert stream["status"] == "saved"
+        assert stream["frame_count"] == 2
+        assert (run_output.path / stream["path"]).is_file()
+        assert document["result"] == result.environment
+
+    asyncio.run(scenario())
 
 
 def test_habitat_explicit_noop_is_a_logical_action_without_native_stop() -> None:

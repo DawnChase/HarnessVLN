@@ -9,6 +9,7 @@ from typing import Any
 
 from harness.config import load_symbol
 from harness.errors import HarnessError, ToolClosedError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool
 from schemas import (
     EnvironmentEpisode,
@@ -96,16 +97,22 @@ class HabitatEnvironment:
         self._metrics: dict[str, Any] = {}
         self._minimum_distance_to_goal: float | None = None
         self._final_pose: Pose | None = None
+        self._output = NULL_MODULE_OUTPUT
 
-    async def start(self, task) -> Sequence[Tool]:
+    async def start(
+        self, task, output: ModuleOutput = NULL_MODULE_OUTPUT
+    ) -> Sequence[Tool]:
         del task
         if self._session is not None:
             raise HarnessError("Habitat environment instances are single-use")
+        self._output = output
         self._session = self.native_factory(self.episode)
         self._observation = self._session.reset()
         self._running = True
         self._terminal = asyncio.get_running_loop().create_future()
         self._capture_metrics()
+        output.record({"profile": self.profile.as_dict()})
+        self._record_main_camera("reset")
         return (
             Tool(
                 "nav.observe",
@@ -178,6 +185,7 @@ class HabitatEnvironment:
                 self._observation = self._session.step(native_action)
             self._action_count += 1
             self._actions_this_goal += 1
+            self._record_main_camera("action")
             self._capture_metrics()
             self._capture_native_terminal()
             return {
@@ -196,6 +204,7 @@ class HabitatEnvironment:
             if arguments["status"] != "completed":
                 return {"done": True, "accepted": False}
             self._observation = self._session.step(self.goal_finish_action)
+            self._record_main_camera("goal_finish")
             self._capture_metrics()
             if self._goal_index + 1 >= len(self._goal_stream):
                 return {"done": True, "accepted": True}
@@ -291,6 +300,23 @@ class HabitatEnvironment:
                         self._minimum_distance_to_goal
                         <= self.oracle_success_distance
                     )
+
+    def _record_main_camera(self, stage: str) -> None:
+        if "rgb" not in self.observation_channels or "rgb" not in self._observation:
+            self._output.unavailable(
+                "main_camera", "Habitat observation has no configured rgb channel"
+            )
+            return
+        self._output.frame(
+            "main_camera",
+            self._observation["rgb"],
+            {
+                "source_time": time.time(),
+                "stage": stage,
+                "action_index": self._action_count,
+                "goal_index": self._goal_index,
+            },
+        )
 
     def _native_terminal(self) -> bool:
         return bool(getattr(self._session, "episode_over", False))

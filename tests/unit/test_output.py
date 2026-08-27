@@ -38,6 +38,7 @@ def test_run_output_writes_scoped_records_and_a_real_video(tmp_path) -> None:
         },
     )
     environment = episode.module("environment")
+    episode.module("unused")
     environment.record({"profile": {"observation_channels": ["rgb"]}})
     environment.frame(
         "main_camera",
@@ -80,6 +81,7 @@ def test_run_output_writes_scoped_records_and_a_real_video(tmp_path) -> None:
     )
     assert read_json(episode_dir / "episode.json")["task"]["task_id"] == "task-3"
     assert read_json(episode_dir / "result.json")["metrics"] == {"sr": 1.0}
+    assert not (episode_dir / "components/unused.json").exists()
     assert len((episode_dir / "events.jsonl").read_text().splitlines()) == 1
 
     environment_record = read_json(episode_dir / "environment.json")

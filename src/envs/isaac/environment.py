@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal, Protocol, cast
 
 from harness.errors import HarnessError, ToolClosedError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool
 from schemas import (
     EnvironmentEpisode,
@@ -80,10 +81,14 @@ class IsaacNavigationEnvironment:
         self._observation_id = 0
         self._action_count = 0
         self._native_tick_count = 0
+        self._output = NULL_MODULE_OUTPUT
 
-    async def start(self, task) -> Sequence[Tool]:
+    async def start(
+        self, task, output: ModuleOutput = NULL_MODULE_OUTPUT
+    ) -> Sequence[Tool]:
         if self._session is not None:
             raise HarnessError("Isaac environment instances are single-use")
+        self._output = output
         if task.goal.goal_id != self.episode.task.goal.goal_id:
             raise HarnessError("task initial goal does not match Isaac episode")
         try:
@@ -92,6 +97,7 @@ class IsaacNavigationEnvironment:
             self._observation, terminated = self._normalize_reset(reset_value)
             if terminated:
                 raise HarnessError("Isaac episode terminated during reset")
+            self._record_main_camera("reset")
             self._running = True
             self._terminal = asyncio.get_running_loop().create_future()
             _, terminated = await self._run_native_action(
@@ -99,6 +105,7 @@ class IsaacNavigationEnvironment:
             )
             if terminated:
                 raise HarnessError("Isaac episode terminated during warmup")
+            output.record({"profile": self.profile.as_dict()})
         except BaseException:
             self._running = False
             if self._session is not None:
@@ -200,6 +207,7 @@ class IsaacNavigationEnvironment:
             observation, terminated = self._normalize_step(value)
             self._observation = observation
             self._native_tick_count += 1
+            self._record_main_camera("native_tick")
             self._capture_metrics(observation)
             if terminated and publish_terminal:
                 self._publish_terminal("completed", "Isaac episode ended")
@@ -263,6 +271,24 @@ class IsaacNavigationEnvironment:
         metrics = observation.get("metrics")
         if isinstance(metrics, Mapping):
             self._metrics = dict(metrics)
+
+    def _record_main_camera(self, stage: str) -> None:
+        native_name = self.observation_channels.get("rgb")
+        if native_name is None or native_name not in self._observation:
+            self._output.unavailable(
+                "main_camera", "Isaac observation has no configured rgb channel"
+            )
+            return
+        self._output.frame(
+            "main_camera",
+            self._observation[native_name],
+            {
+                "source_time": time.time(),
+                "stage": stage,
+                "action_index": self._action_count,
+                "native_tick_index": self._native_tick_count,
+            },
+        )
 
     def _publish_terminal(
         self, kind: Literal["completed", "failed"], reason: str

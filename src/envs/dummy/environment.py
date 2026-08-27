@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from harness.errors import HarnessError, ToolClosedError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool
 from schemas import (
     EnvironmentEpisode,
@@ -59,7 +60,9 @@ class DummyNavigationEnvironment:
         self._terminal: asyncio.Future[EnvironmentTerminal] | None = None
         self._observation_id = 0
 
-    async def start(self, task: NavTask) -> Sequence[Tool]:
+    async def start(
+        self, task: NavTask, output: ModuleOutput = NULL_MODULE_OUTPUT
+    ) -> Sequence[Tool]:
         if self._running or self.start_count:
             raise HarnessError("environment instances are single-use")
         if task.goal.goal_id != self.goals[0].goal_id:
@@ -67,6 +70,8 @@ class DummyNavigationEnvironment:
         self.start_count += 1
         self._running = True
         self._terminal = asyncio.get_running_loop().create_future()
+        output.record({"profile": self.profile.as_dict()})
+        output.unavailable("main_camera", "environment has no visual sensor")
         return (
             Tool(
                 "nav.observe",

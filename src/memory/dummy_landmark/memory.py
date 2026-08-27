@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.errors import HarnessError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool, ToolClient
 from schemas import NavTask
 
@@ -24,7 +25,12 @@ class DummyLandmarkMemory:
         self._started = False
         self._stopped = False
 
-    async def start(self, task: NavTask, tools: ToolClient):
+    async def start(
+        self,
+        task: NavTask,
+        tools: ToolClient,
+        output: ModuleOutput = NULL_MODULE_OUTPUT,
+    ):
         del tools
         if self._started:
             raise HarnessError("memory instances are single-use")
@@ -35,6 +41,14 @@ class DummyLandmarkMemory:
             if not isinstance(value, list):
                 raise HarnessError(f"invalid landmark file: {self.path}")
             self._items = value
+        output.record(
+            {
+                "memory": type(self).__name__,
+                "store": str(self.path),
+                "writeback": self.writeback,
+                "initial_items": len(self._items),
+            }
+        )
         return (
             Tool(
                 "spatial.remember",

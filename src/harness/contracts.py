@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from harness.errors import HarnessError
+from harness.output import ModuleOutput
 from harness.tool_bus import Tool, ToolClient
 from schemas import EnvironmentTerminal, NavigationProfile, NavTask
 
@@ -25,7 +26,9 @@ class NavigationAgent(Protocol):
 class Environment(Protocol):
     profile: NavigationProfile
 
-    async def start(self, task: NavTask) -> Sequence[Tool]: ...
+    async def start(
+        self, task: NavTask, output: ModuleOutput = ...
+    ) -> Sequence[Tool]: ...
 
     async def stop(self, reason: str) -> None: ...
 
@@ -38,7 +41,9 @@ class VLNNavigator(Protocol):
     required_tools: frozenset[str]
     requirements: dict[str, Any]
 
-    async def start(self, task: NavTask, tools: ToolClient) -> Sequence[Tool]: ...
+    async def start(
+        self, task: NavTask, tools: ToolClient, output: ModuleOutput = ...
+    ) -> Sequence[Tool]: ...
 
     async def stop(self, reason: str) -> None: ...
 
@@ -46,7 +51,9 @@ class VLNNavigator(Protocol):
 class SpatialMemory(Protocol):
     required_tools: frozenset[str]
 
-    async def start(self, task: NavTask, tools: ToolClient) -> Sequence[Tool]: ...
+    async def start(
+        self, task: NavTask, tools: ToolClient, output: ModuleOutput = ...
+    ) -> Sequence[Tool]: ...
 
     async def stop(self, reason: str) -> None: ...
 

@@ -13,6 +13,7 @@ from typing import Any
 
 from harness.errors import HarnessError
 from harness.media import FileArrayStore
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool, ToolClient
 from schemas import NavTask
 
@@ -653,7 +654,12 @@ class RPCVLNNavigator:
             )
         self._session_scoped = True
 
-    async def start(self, task: NavTask, tools: ToolClient):
+    async def start(
+        self,
+        task: NavTask,
+        tools: ToolClient,
+        output: ModuleOutput = NULL_MODULE_OUTPUT,
+    ):
         async with self._lifecycle_lock:
             if self._task is not None:
                 raise HarnessError(
@@ -704,6 +710,14 @@ class RPCVLNNavigator:
                     raise
             self._terminal_jobs.clear()
             self._task = task
+            output.record(
+                {
+                    "navigator": type(self).__name__,
+                    "model": self.model_name,
+                    "protocol": self.protocol_version,
+                    "requirements": self.requirements,
+                }
+            )
         return (
             Tool(
                 "vln.navigate.start",

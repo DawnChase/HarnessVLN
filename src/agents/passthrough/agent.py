@@ -20,6 +20,14 @@ class PassthroughVLNAgent:
         self.poll_period_s = poll_period_s
 
     async def run(self, context: NavContext) -> None:
+        context.output.record(
+            {
+                "agent": type(self).__name__,
+                "mode": "vln_passthrough",
+                "poll_period_s": self.poll_period_s,
+                "required_tools": sorted(self.required_tools),
+            }
+        )
         instruction = context.task.instruction
         while True:
             status = await run_vln_job(

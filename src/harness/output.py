@@ -47,6 +47,7 @@ class ModuleOutput:
         self._streams: dict[str, VideoWriter] = {}
         self._stream_records: dict[str, JsonObject] = {}
         self._errors: list[str] = []
+        self._touched = False
         self._lock = threading.RLock()
         self._closed = False
 
@@ -59,6 +60,9 @@ class ModuleOutput:
             raise TypeError("module output record must be a mapping")
         with self._lock:
             self._ensure_open()
+            if self._record_path is None:
+                return
+            self._touched = True
             self._record.update({str(key): _normalize(value) for key, value in data.items()})
             self._write_record()
 
@@ -79,6 +83,7 @@ class ModuleOutput:
             if self._record_path is None:
                 return
             name = _safe_component(stream, "stream")
+            self._touched = True
             if not self._video.enabled:
                 self._stream_records[name] = {
                     "status": "disabled",
@@ -126,6 +131,7 @@ class ModuleOutput:
             if self._record_path is None:
                 return
             name = _safe_component(stream, "stream")
+            self._touched = True
             if name in self._streams:
                 raise HarnessError(
                     f"cannot mark active video stream unavailable: {self.module}.{name}"
@@ -162,7 +168,7 @@ class ModuleOutput:
             return tuple(self._errors)
 
     def _write_record(self) -> None:
-        if self._record_path is None:
+        if self._record_path is None or not self._touched:
             return
         document = {
             "schema_version": 1,
@@ -250,7 +256,7 @@ class BenchOutput:
         self.benchmark_id = benchmark_id
         self._run_dir = run_dir
         self._video = video
-        self._episodes: list[EpisodeOutput] = []
+        self._episodes: list[tuple[EpisodeOutput, JsonObject]] = []
         self._summary: JsonObject = {
             "schema_version": 1,
             "benchmark_id": benchmark_id,
@@ -273,18 +279,57 @@ class BenchOutput:
             run_dir=self._run_dir,
             video=self._video,
         )
-        output.module("benchmark").record(record)
-        self._episodes.append(output)
+        output.module("benchmark").record({"index": index, **dict(record)})
+        self._episodes.append(
+            (
+                output,
+                {
+                    "index": index,
+                    "case_id": case_id,
+                    "path": str(
+                        (output.path / "result.json").relative_to(self.path)
+                    ),
+                },
+            )
+        )
         return output
 
     def finish(self, summary: Mapping[str, Any]) -> None:
+        summary_record = dict(summary)
+        supplied_episodes = {
+            int(item["index"]): dict(item)
+            for item in summary_record.pop("episodes", ())
+        }
+        episodes = [
+            {**reference, **supplied_episodes.get(int(reference["index"]), {})}
+            for _, reference in sorted(
+                self._episodes, key=lambda item: int(item[1]["index"])
+            )
+        ]
+        case_counts = summary_record.get("case_counts", {})
+        has_case_failures = isinstance(case_counts, Mapping) and any(
+            int(case_counts.get(name, 0)) > 0
+            for name in (
+                "task_failures",
+                "case_errors",
+                "cleanup_errors",
+                "output_errors",
+            )
+        )
         self._summary = {
             "schema_version": 1,
             "benchmark_id": self.benchmark_id,
-            "status": "completed",
+            "status": (
+                "failed"
+                if summary_record.get("error")
+                or summary_record.get("cleanup_errors")
+                or has_case_failures
+                else "completed"
+            ),
             "started_at_unix": self._summary["started_at_unix"],
             "finished_at_unix": time.time(),
-            **dict(summary),
+            **summary_record,
+            "episodes": episodes,
         }
         _atomic_json(self.path / "summary.json", self._summary)
 
@@ -323,7 +368,7 @@ class RunOutput:
         self.run_id = run_id
         self.path = run_dir
         self._video = VideoSettings.from_mapping(output.get("video"))
-        self._benches: list[BenchOutput] = []
+        self._benches: dict[int, BenchOutput] = {}
         self._created_at = time.time()
         config_dir = self.path / "config"
         config_dir.mkdir()
@@ -361,6 +406,8 @@ class RunOutput:
         name: str,
         split: str,
     ) -> BenchOutput:
+        if index in self._benches:
+            raise HarnessError(f"benchmark output index already exists: {index}")
         benchmark_id = f"{index:03d}-{_slug(name)}-{_slug(split or 'default')}"
         output = BenchOutput(
             self.path / "benches" / benchmark_id,
@@ -368,7 +415,7 @@ class RunOutput:
             video=self._video,
             benchmark_id=benchmark_id,
         )
-        self._benches.append(output)
+        self._benches[index] = output
         self._write_manifest()
         return output
 
@@ -396,10 +443,12 @@ class RunOutput:
                 "status": bench.summary.get("status", "running"),
                 "name": bench.summary.get("name"),
                 "split": bench.summary.get("split"),
+                "validation_status": bench.summary.get("validation_status"),
                 "aggregate_metrics": bench.summary.get("aggregate_metrics", {}),
+                "case_counts": bench.summary.get("case_counts", {}),
                 "error": bench.summary.get("error"),
             }
-            for bench in self._benches
+            for _, bench in sorted(self._benches.items())
         ]
         _atomic_json(self.manifest_path, self._manifest)
 

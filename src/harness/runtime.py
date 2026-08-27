@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
+from harness.output import EpisodeOutput, ModuleOutput, NULL_MODULE_OUTPUT
 from harness.requirements import check_navigation_requirements
 from harness.tool_bus import JsonObject, Tool, ToolBus, ToolClient, ToolEvent
 from schemas import EnvironmentTerminal, NavTask
@@ -113,6 +114,7 @@ class NavContext:
     execution_id: str
     tools: ToolClient
     cancelled: asyncio.Event
+    output: ModuleOutput = NULL_MODULE_OUTPUT
 
     @property
     def nav(self) -> NavTools:
@@ -148,8 +150,20 @@ class NavigationHarness:
         self.timeout_s = timeout_s
         self.shutdown_timeout_s = shutdown_timeout_s
 
-    async def run_task(self, task: NavTask, stack: NavigationStack) -> NavigationResult:
+    async def run_task(
+        self,
+        task: NavTask,
+        stack: NavigationStack,
+        *,
+        output: EpisodeOutput | None = None,
+    ) -> NavigationResult:
         execution_id = uuid.uuid4().hex
+        environment_output = (
+            output.module("environment") if output else NULL_MODULE_OUTPUT
+        )
+        memory_output = output.module("memory") if output else NULL_MODULE_OUTPUT
+        vln_output = output.module("vln") if output else NULL_MODULE_OUTPUT
+        agent_output = output.module("agent") if output else NULL_MODULE_OUTPUT
         bus = ToolBus()
         terminal = _TerminalSignal()
         cancelled = asyncio.Event()
@@ -233,7 +247,11 @@ class NavigationHarness:
                 )
 
             started.append("environment")
-            environment_tools = await stack.environment.start(task)
+            environment_tools = (
+                await stack.environment.start(task, environment_output)
+                if output is not None
+                else await stack.environment.start(task)
+            )
             bus.register(
                 environment_tools,
                 owner=f"environment {type(stack.environment).__name__}",
@@ -243,7 +261,11 @@ class NavigationHarness:
                 bus.require(type(stack.memory).__name__, stack.memory.required_tools)
                 memory_tools = bus.client("memory", stack.memory.required_tools)
                 started.append("memory")
-                memory_bindings = await stack.memory.start(task, memory_tools)
+                memory_bindings = (
+                    await stack.memory.start(task, memory_tools, memory_output)
+                    if output is not None
+                    else await stack.memory.start(task, memory_tools)
+                )
                 bus.register(
                     memory_bindings,
                     owner=f"memory {type(stack.memory).__name__}",
@@ -253,7 +275,11 @@ class NavigationHarness:
                 bus.require(type(stack.vln).__name__, stack.vln.required_tools)
                 vln_tools = bus.client("vln", stack.vln.required_tools)
                 started.append("vln")
-                vln_bindings = await stack.vln.start(task, vln_tools)
+                vln_bindings = (
+                    await stack.vln.start(task, vln_tools, vln_output)
+                    if output is not None
+                    else await stack.vln.start(task, vln_tools)
+                )
                 bus.register(
                     vln_bindings,
                     owner=f"vln {type(stack.vln).__name__}",
@@ -266,6 +292,7 @@ class NavigationHarness:
                 execution_id=execution_id,
                 tools=bus.client("agent", agent_tools),
                 cancelled=cancelled,
+                output=agent_output,
             )
             agent_task = asyncio.create_task(stack.agent.run(context), name="agent")
             failure_task = asyncio.create_task(
@@ -341,8 +368,12 @@ class NavigationHarness:
         if "environment" in started:
             try:
                 environment_result = stack.environment.result()
+                environment_output.record({"result": environment_result})
             except Exception as error:
                 cleanup_errors.append(f"result: {type(error).__name__}: {error}")
+        if output is not None:
+            for event in bus.audit:
+                output.event(asdict(event))
         return NavigationResult(
             execution_id=execution_id,
             task_id=task.task_id,

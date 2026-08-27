@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal
 
 from harness.errors import HarnessError, ToolClosedError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool
 from schemas import (
     EnvironmentEpisode,
@@ -97,11 +98,15 @@ class RoboTHOREnvironment:
         self._path_length = 0.0
         self._success = False
         self._goal_finished = False
+        self._output = NULL_MODULE_OUTPUT
 
-    async def start(self, task) -> Sequence[Tool]:
+    async def start(
+        self, task, output: ModuleOutput = NULL_MODULE_OUTPUT
+    ) -> Sequence[Tool]:
         del task
         if self._running or self._controller is not None:
             raise HarnessError("RoboTHOR environment instances are single-use")
+        self._output = output
         factory = self.controller_factory or self._load_controller_factory()
         self._controller = factory(**self.controller_kwargs)
         setup = self.episode.setup
@@ -123,6 +128,8 @@ class RoboTHOREnvironment:
         self._running = True
         self._terminal = asyncio.get_running_loop().create_future()
         self._trajectory.append(self._agent_state())
+        output.record({"profile": self.profile.as_dict()})
+        self._record_main_camera("reset")
         return (
             Tool(
                 "nav.observe",
@@ -224,6 +231,7 @@ class RoboTHOREnvironment:
                     "success": bool(self._event.metadata.get("lastActionSuccess", False)),
                 }
             )
+            self._record_main_camera("action")
             if len(self._actions) >= self.max_actions:
                 self._publish_terminal("completed", "RoboTHOR action budget reached")
             response = {
@@ -248,6 +256,7 @@ class RoboTHOREnvironment:
                     "success": bool(self._event.metadata.get("lastActionSuccess", False)),
                 }
             )
+            self._record_main_camera("goal_finish")
             category = self.episode.setup["object_type"]
             target = next(
                 (
@@ -293,6 +302,23 @@ class RoboTHOREnvironment:
             "rotation": float(agent["rotation"]["y"]),
             "horizon": float(agent["cameraHorizon"]),
         }
+
+    def _record_main_camera(self, stage: str) -> None:
+        frame = getattr(self._event, "frame", None)
+        if frame is None:
+            self._output.unavailable(
+                "main_camera", "RoboTHOR event has no RGB frame"
+            )
+            return
+        self._output.frame(
+            "main_camera",
+            frame,
+            {
+                "source_time": time.time(),
+                "stage": stage,
+                "action_index": len(self._actions),
+            },
+        )
 
     def _publish_terminal(
         self, kind: Literal["completed", "failed"], reason: str

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from harness.errors import HarnessError
+from harness.output import ModuleOutput, NULL_MODULE_OUTPUT
 from harness.tool_bus import Tool, ToolClient
 from schemas import NavTask
 
@@ -42,9 +43,20 @@ class DummyVLNNavigator:
         self._jobs: dict[str, _Job] = {}
         self._closed = False
 
-    async def start(self, task: NavTask, tools: ToolClient):
+    async def start(
+        self,
+        task: NavTask,
+        tools: ToolClient,
+        output: ModuleOutput = NULL_MODULE_OUTPUT,
+    ):
         del task
         self._tools = tools
+        output.record(
+            {
+                "navigator": type(self).__name__,
+                "requirements": self.requirements,
+            }
+        )
         return (
             Tool(
                 "vln.navigate.start",

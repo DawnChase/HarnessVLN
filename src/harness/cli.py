@@ -20,17 +20,25 @@ def _run_benchmarks(runner: str, agent: str) -> int:
     run_summary, manifest = execute_runner_sync(runner, agent)
     failed = False
     for benchmark in run_summary.benchmarks:
-        task_failures, case_errors, bench_errors, cleanup_errors = _failure_counts(
-            benchmark
-        )
+        (
+            task_failures,
+            case_errors,
+            bench_errors,
+            cleanup_errors,
+            output_errors,
+        ) = _failure_counts(benchmark)
         failed = failed or bool(
-            task_failures or case_errors or bench_errors or cleanup_errors
+            task_failures
+            or case_errors
+            or bench_errors
+            or cleanup_errors
+            or output_errors
         )
         print(
             f"{benchmark.benchmark}/{benchmark.split}: "
             f"{len(benchmark.records)} cases, {task_failures} task failures, "
             f"{case_errors} case errors, {bench_errors} bench errors, "
-            f"{cleanup_errors} cleanup errors"
+            f"{cleanup_errors} cleanup errors, {output_errors} output errors"
         )
         if benchmark.error is not None:
             print(f"  bench error: {benchmark.error}")
@@ -101,11 +109,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _failure_counts(summary: BenchmarkSummary) -> tuple[int, int, int, int]:
-    task_failures = sum(
-        record.result is not None and record.result.terminal.status == "failed"
-        for record in summary.records
-    )
+def _failure_counts(summary: BenchmarkSummary) -> tuple[int, int, int, int, int]:
+    task_failures = sum(record.task_failed for record in summary.records)
     case_errors = sum(record.error is not None for record in summary.records)
     bench_errors = int(summary.error is not None)
     cleanup_errors = len(summary.cleanup_errors) + sum(
@@ -113,7 +118,8 @@ def _failure_counts(summary: BenchmarkSummary) -> tuple[int, int, int, int]:
         for record in summary.records
         if record.result is not None
     )
-    return task_failures, case_errors, bench_errors, cleanup_errors
+    output_errors = sum(len(record.output_errors) for record in summary.records)
+    return task_failures, case_errors, bench_errors, cleanup_errors, output_errors
 
 
 if __name__ == "__main__":

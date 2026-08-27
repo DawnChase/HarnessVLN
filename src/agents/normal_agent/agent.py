@@ -41,6 +41,15 @@ class NormalAgent:
         self._client = client
 
     async def run(self, context: NavContext) -> None:
+        context.output.record(
+            {
+                "agent": type(self).__name__,
+                "mode": "free_agent_loop",
+                "model": self.model,
+                "max_iterations": self.max_iterations,
+                "required_tools": sorted(self.required_tools),
+            }
+        )
         model_tools, tool_names = _responses_tools(context.tools.specs)
         input_items: list[Any] = [
             {

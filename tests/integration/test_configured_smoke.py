@@ -7,9 +7,31 @@ from pathlib import Path
 from benches.dummy import DummyBenchmark
 from envs import DummyNavigationEnvironment
 from harness.app import execute_runner
+from harness.output import NULL_MODULE_OUTPUT
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def read_json(path: Path):
+    return json.loads(path.read_text())
+
+
+def read_bench(manifest: Path, document: dict, index: int = 0):
+    path = manifest.parent / document["benchmarks"][index]["path"]
+    return read_json(path), path.parent
+
+
+def read_episode(bench: dict, bench_dir: Path, index: int):
+    path = bench_dir / bench["episodes"][index]["path"]
+    return read_json(path), path.parent
+
+
+def read_events(episode_dir: Path):
+    return [
+        json.loads(line)
+        for line in (episode_dir / "events.jsonl").read_text().splitlines()
+    ]
 
 
 class ScoreFailureBenchmark(DummyBenchmark):
@@ -26,11 +48,11 @@ class PartiallyInvalidMetricBenchmark(DummyBenchmark):
 
 
 class InvalidConfiguredAgent:
-    required_tools = frozenset()
+    required_tools: frozenset[str] = frozenset()
 
 
 class StopConfiguredAgent:
-    required_tools = frozenset()
+    required_tools: frozenset[str] = frozenset()
 
     async def run(self, context):
         await context.nav.stop("completed")
@@ -39,9 +61,9 @@ class StopConfiguredAgent:
 class TrackingDummyEnvironment(DummyNavigationEnvironment):
     total_start_calls = 0
 
-    async def start(self, task):
+    async def start(self, task, output=NULL_MODULE_OUTPUT):
         type(self).total_start_calls += 1
-        return await super().start(task)
+        return await super().start(task, output)
 
 
 _configured_agent_calls = 0
@@ -75,17 +97,26 @@ def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
         )
     )
     summary = run_summary.benchmarks[0]
-    document = json.loads(manifest.read_text())
+    document = read_json(manifest)
+    bench, bench_dir = read_bench(manifest, document)
+    episodes = [read_episode(bench, bench_dir, index) for index in range(2)]
 
     assert len(summary.records) == 2
     assert document["aggregate_metrics"] == {"success": 1.0}
     assert document["benchmarks"][0]["validation_status"] == "contract"
-    assert document["config_digest"]
+    assert document["config"]["digest"]
     assert document["provenance"]["simulator"] == "dummy"
-    records = document["benchmarks"][0]["records"]
-    assert all(record["error_stage"] is None for record in records)
-    assert all(record["terminal"]["actor"] == "agent" for record in records)
-    assert all(record["audit"][-1]["name"] == "nav.stop" for record in records)
+    assert all(result["error_stage"] is None for result, _ in episodes)
+    assert all(result["terminal"]["actor"] == "agent" for result, _ in episodes)
+    assert all(read_events(path)[-1]["name"] == "nav.stop" for _, path in episodes)
+    assert all(
+        isinstance(read_json(path / "environment.json")["result"]["position"], int)
+        for _, path in episodes
+    )
+    assert all(
+        read_json(path / "components/agent.json")["mode"] == "vln_passthrough"
+        for _, path in episodes
+    )
 
 
 def test_runner_executes_multiple_referenced_benches(tmp_path) -> None:
@@ -105,7 +136,7 @@ def test_runner_executes_multiple_referenced_benches(tmp_path) -> None:
     run_summary, manifest = asyncio.run(
         execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
     )
-    document = json.loads(manifest.read_text())
+    document = read_json(manifest)
 
     assert [bench.benchmark for bench in run_summary.benchmarks] == [
         "dummy_navigation",
@@ -139,7 +170,9 @@ def test_runner_isolates_one_bench_construction_failure(tmp_path) -> None:
     run_summary, manifest = asyncio.run(
         execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
     )
-    document = json.loads(manifest.read_text())
+    document = read_json(manifest)
+    failed_document, _ = read_bench(manifest, document, 0)
+    completed_document, _ = read_bench(manifest, document, 1)
 
     failed, completed = run_summary.benchmarks
     assert failed.benchmark == "benches.dummy:DummyBenchmark"
@@ -150,9 +183,9 @@ def test_runner_isolates_one_bench_construction_failure(tmp_path) -> None:
     assert completed.error is None
     assert len(completed.records) == 2
     assert document["benchmarks"][0]["error"] == failed.error
-    assert document["benchmarks"][0]["records"] == []
+    assert failed_document["episodes"] == []
     assert document["benchmarks"][1]["error"] is None
-    assert len(document["benchmarks"][1]["records"]) == 2
+    assert len(completed_document["episodes"]) == 2
 
 
 def test_score_failure_manifest_retains_execution_evidence(tmp_path) -> None:
@@ -178,15 +211,16 @@ def test_score_failure_manifest_retains_execution_evidence(tmp_path) -> None:
         execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
     )
     record = run_summary.benchmarks[0].records[0]
-    document = json.loads(manifest.read_text())
-    serialized = document["benchmarks"][0]["records"][0]
+    document = read_json(manifest)
+    bench, bench_dir = read_bench(manifest, document)
+    serialized, episode_dir = read_episode(bench, bench_dir, 0)
 
     assert record.result is not None
     assert record.error_stage == "score"
     assert serialized["error_stage"] == "score"
     assert serialized["terminal"]["status"] == "completed"
-    assert serialized["environment"]["position"] == 0
-    assert serialized["audit"][-1]["name"] == "nav.stop"
+    assert read_json(episode_dir / "environment.json")["result"]["position"] == 0
+    assert read_events(episode_dir)[-1]["name"] == "nav.stop"
     assert serialized["metrics"] == {}
 
 
@@ -221,7 +255,9 @@ def test_invalid_metric_is_isolated_before_manifest_aggregation(tmp_path) -> Non
         manifest.read_text(), parse_constant=reject_nonstandard_constant
     )
     failed, completed = run_summary.benchmarks[0].records
-    serialized_failed, serialized_completed = document["benchmarks"][0]["records"]
+    bench, bench_dir = read_bench(manifest, document)
+    serialized_failed, _ = read_episode(bench, bench_dir, 0)
+    serialized_completed, _ = read_episode(bench, bench_dir, 1)
 
     assert failed.error_stage == "score"
     assert failed.result is not None
@@ -234,7 +270,7 @@ def test_invalid_metric_is_isolated_before_manifest_aggregation(tmp_path) -> Non
     assert serialized_failed["metrics"] == {}
     assert serialized_completed["error_stage"] is None
     assert serialized_completed["metrics"] == {"success": 1.0}
-    assert document["benchmarks"][0]["aggregate_metrics"] == {"success": 1.0}
+    assert bench["aggregate_metrics"] == {"success": 1.0}
     assert document["aggregate_metrics"] == {"success": 1.0}
 
 
@@ -274,8 +310,10 @@ def test_invalid_plugin_contract_is_a_stack_error_without_starting_env(tmp_path)
 
     run_summary, manifest = asyncio.run(execute_runner(runner, agent))
     failed, completed = run_summary.benchmarks[0].records
-    document = json.loads(manifest.read_text())
-    serialized_failed, serialized_completed = document["benchmarks"][0]["records"]
+    document = read_json(manifest)
+    bench, bench_dir = read_bench(manifest, document)
+    serialized_failed, _ = read_episode(bench, bench_dir, 0)
+    serialized_completed, _ = read_episode(bench, bench_dir, 1)
 
     assert failed.error_stage == "stack"
     assert failed.result is None
