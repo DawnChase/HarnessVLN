@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +10,7 @@ from harness.app import (
     ConfiguredStackFactory,
     InteractiveNavigationSession,
     _stack_factory,
+    run_config,
 )
 from harness.config import (
     ComponentSpec,
@@ -29,6 +31,7 @@ def test_stack_factory_propagates_component_serial_constraint() -> None:
     )
 
     assert factory.requires_serial is True
+    assert factory.global_serial_reasons == ("environment.serial",)
 
 
 def test_stack_factory_allows_parallel_read_only_components() -> None:
@@ -38,6 +41,7 @@ def test_stack_factory_allows_parallel_read_only_components() -> None:
     )
 
     assert factory.requires_serial is False
+    assert factory.global_serial_reasons == ()
 
 
 def test_agent_and_memory_fragments_create_independent_plugins() -> None:
@@ -50,6 +54,10 @@ def test_agent_and_memory_fragments_create_independent_plugins() -> None:
     assert type(stack.agent).__name__ == "NormalAgent"
     assert type(stack.memory).__name__ == "DummyLandmarkMemory"
     assert factory.requires_serial is True
+    assert factory.global_serial_reasons == (
+        "memory.serial",
+        "memory.writeback",
+    )
     assert "spatial.search" in stack.agent.required_tools
 
 
@@ -99,10 +107,27 @@ def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:
 
     assert first.vln is second.vln
     assert factory.requires_serial
+    assert factory.global_serial_reasons == ()
     asyncio.run(factory.close_run())
     third = factory(cases[0].environment_episode)
     assert third.vln is not first.vln
     asyncio.run(factory.close_run())
+
+
+def test_runner_rejects_cross_bench_global_resource_race(tmp_path) -> None:
+    bench_config = Path("config/benches/dummy.yaml").resolve()
+    runner = tmp_path / "runner.yaml"
+    runner.write_text(
+        "runner:\n"
+        "  benches:\n"
+        f"    - {bench_config}\n"
+        f"    - {bench_config}\n"
+        "  bench_parallelism: 2\n"
+        "  task_parallelism: 1\n"
+    )
+
+    with pytest.raises(HarnessError, match="memory.writeback"):
+        asyncio.run(run_config(runner, "config/agents/normal_agent.yaml"))
 
 
 def test_run_scope_is_rejected_for_task_owned_components() -> None:

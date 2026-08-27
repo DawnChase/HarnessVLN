@@ -52,9 +52,25 @@ class ConfiguredStackFactory:
     @property
     def requires_serial(self) -> bool:
         components = (self.agent, self.environment, self.vln, self.memory)
-        return any(
-            spec and (spec.serial or spec.scope == "run") for spec in components
-        ) or bool(self.memory and self.memory.params.get("writeback", True))
+        return bool(self.global_serial_reasons) or any(
+            spec and spec.scope == "run" for spec in components
+        )
+
+    @property
+    def global_serial_reasons(self) -> tuple[str, ...]:
+        reasons = [
+            f"{name}.serial"
+            for name, spec in (
+                ("agent", self.agent),
+                ("environment", self.environment),
+                ("vln", self.vln),
+                ("memory", self.memory),
+            )
+            if spec is not None and spec.serial
+        ]
+        if self.memory is not None and self.memory.params.get("writeback", True):
+            reasons.append("memory.writeback")
+        return tuple(reasons)
 
     def __call__(self, episode: EnvironmentEpisode) -> NavigationStack:
         if self._close_task is not None:
@@ -186,6 +202,13 @@ async def run_config(
     )
     bench_parallelism = int(settings.get("bench_parallelism", 1))
     semaphore = asyncio.Semaphore(bench_parallelism)
+    stack_factories = tuple(
+        _stack_factory(agent_config, config.environment)
+        for config in runner_config.benches
+    )
+    _validate_bench_parallelism(
+        runner_config, stack_factories, bench_parallelism=bench_parallelism
+    )
 
     async def run_bench(index: int) -> tuple[int, RunSummary]:
         config = runner_config.benches[index]
@@ -199,7 +222,7 @@ async def run_config(
                     )
                 summary = await BenchRunner(harness).run(
                     benchmark,
-                    _stack_factory(agent_config, config.environment),
+                    stack_factories[index],
                     parallelism=int(settings.get("task_parallelism", 1)),
                     max_cases=settings.get("max_cases"),
                 )
@@ -293,6 +316,27 @@ def _stack_factory(
         vln=agent.vln,
         memory=agent.memory,
     )
+
+
+def _validate_bench_parallelism(
+    runner: RunnerConfig,
+    factories: tuple[ConfiguredStackFactory, ...],
+    *,
+    bench_parallelism: int,
+) -> None:
+    if bench_parallelism <= 1 or len(factories) <= 1:
+        return
+    conflicts = [
+        f"{runner.benches[index].benchmark.factory} "
+        f"({', '.join(factory.global_serial_reasons)})"
+        for index, factory in enumerate(factories)
+        if factory.global_serial_reasons
+    ]
+    if conflicts:
+        raise HarnessError(
+            "bench_parallelism must be 1 when a stack requires global serial "
+            f"execution: {'; '.join(conflicts)}"
+        )
 
 
 def _is_benchmark(value: Any) -> bool:
