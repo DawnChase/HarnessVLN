@@ -5,8 +5,9 @@ import asyncio
 import pytest
 
 from benches.base import BenchmarkCase
-from envs import isaac_vln_pe, isaac_vlnverse
 from envs.isaac import IsaacNavigationEnvironment
+from envs.isaac_vln_pe import environment as isaac_vln_pe
+from envs.isaac_vlnverse import environment as isaac_vlnverse
 from harness import NavigationHarness, NavigationStack
 from harness.requirements import check_navigation_requirements
 from schemas import NavGoal, NavTask
