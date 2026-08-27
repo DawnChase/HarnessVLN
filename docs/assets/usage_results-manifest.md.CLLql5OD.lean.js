@@ -3,7 +3,7 @@ const __pageData = JSON.parse('{"title":"结果与 Manifest","description":"","f
 const _sfc_main = { name: "usage/results-manifest.md" };
 function _sfc_render(_ctx, _cache, $props, $setup, $data, $options) {
   return openBlock(), createElementBlock("div", null, [..._cache[0] || (_cache[0] = [
-    createStaticVNode("", 21)
+    createStaticVNode("", 24)
   ])]);
 }
 const resultsManifest = /* @__PURE__ */ _export_sfc(_sfc_main, [["render", _sfc_render]]);
