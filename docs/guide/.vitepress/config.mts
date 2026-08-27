@@ -4,7 +4,7 @@ export default defineConfig({
   lang: 'zh-CN',
   title: 'HarnessVLN Guide',
   description: 'Agent 主导的模块化视觉语言导航 Harness 架构与开发指南',
-  outDir: '../page',
+  outDir: '../../page',
   cleanUrls: false,
   lastUpdated: true,
   head: [

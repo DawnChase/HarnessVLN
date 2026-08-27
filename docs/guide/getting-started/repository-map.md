@@ -23,8 +23,8 @@ HarnessVLN/
 │   └── integration/   # 从 YAML 运行的闭环 smoke
 ├── docs/
 │   ├── guide/         # 本站 Markdown 与 VitePress 源
-│   ├── page/          # 生产静态站点
 │   └── traces/        # 可审查的真实运行证据
+├── page/              # VitePress 生产静态站点
 ├── data/              # 数据集、场景与资产；可含软链接
 ├── model/             # 模型 checkpoint
 ├── cache/             # 上游源码与可再生缓存，不提交

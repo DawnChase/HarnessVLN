@@ -94,7 +94,7 @@ cd docs/guide
 npm run docs:build
 ```
 
-VitePress 构建会检查内部链接。生产页面输出到 `docs/page/`；提交文档改动时同时提交 Markdown 源、
+VitePress 构建会检查内部链接。生产页面输出到仓库根目录 `page/`；提交文档改动时同时提交 Markdown 源、
 生成图与静态构建结果，并在桌面和移动 viewport 检查导航、表格、代码块和长文本。
 
 ## 发布清单

@@ -106,7 +106,7 @@ conda run -n harnessvln pytest -q
 ```bash
 cd docs/guide
 npm install
-npm run docs:build       # 输出到 docs/page
+npm run docs:build       # 输出到仓库根目录 page/
 npm run docs:dev         # 本地热更新
 ```
 

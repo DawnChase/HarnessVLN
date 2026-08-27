@@ -65,7 +65,7 @@ description: Agent 主导的模块化视觉语言导航 Harness
 
 ## 文档与构建
 
-Markdown 源文件位于 `docs/guide/`，VitePress 生产构建输出到 `docs/page/`：
+Markdown 源文件位于 `docs/guide/`，VitePress 生产构建输出到仓库根目录 `page/`：
 
 ```bash
 cd docs/guide
