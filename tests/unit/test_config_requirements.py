@@ -154,16 +154,19 @@ def test_requirement_mismatch_prevents_vln_and_agent_start() -> None:
         goal = NavGoal("goal", "go")
         navigator = IncompatibleVLN()
         agent = TrackingAgent()
+        environment = DummyNavigationEnvironment((goal,), targets=(0,))
         result = await NavigationHarness(timeout_s=1).run_task(
             NavTask("mismatch", goal),
             NavigationStack(
                 agent,
-                DummyNavigationEnvironment((goal,), targets=(0,)),
+                environment,
                 vln=navigator,
             ),
         )
         assert result.terminal.status == "failed"
         assert "forward_m=0.25" in result.terminal.reason
+        assert environment.start_count == 0
+        assert result.environment == {}
         assert navigator.start_calls == 0
         assert agent.run_calls == 0
 

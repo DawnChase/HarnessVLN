@@ -6,10 +6,16 @@ from collections.abc import Sequence
 import pytest
 
 from harness.contracts import NavigationStack
-from harness.errors import MissingToolError, ToolClosedError, ToolValidationError
+from harness.errors import HarnessError, MissingToolError, ToolClosedError, ToolValidationError
 from harness.runtime import NavigationHarness
 from harness.tool_bus import Tool, ToolBus
-from schemas import EnvironmentTerminal, NavGoal, NavTask
+from schemas import (
+    EnvironmentTerminal,
+    MotionProfile,
+    NavGoal,
+    NavigationProfile,
+    NavTask,
+)
 
 
 def run(coroutine):
@@ -21,6 +27,13 @@ def task() -> NavTask:
 
 
 class FakeEnvironment:
+    profile = NavigationProfile(
+        observation_channels=frozenset({"position"}),
+        motion=MotionProfile(
+            "nav.move.discrete", frozenset({"forward"}), frame="fixture"
+        ),
+    )
+
     def __init__(self) -> None:
         self.position = 0
         self.stopped = False
@@ -84,6 +97,57 @@ class LoopAgent:
         while (await context.nav.observe())["position"] < 3:
             await context.nav.move_discrete("forward")
         await context.nav.stop("success", "reached")
+
+
+def test_navigation_stack_rejects_invalid_agent_before_environment_start() -> None:
+    class InvalidAgent:
+        required_tools = frozenset()
+
+    environment = FakeEnvironment()
+
+    with pytest.raises(HarnessError, match="agent InvalidAgent.*callable methods: run"):
+        NavigationStack(InvalidAgent(), environment)
+
+    assert environment.failure is None
+
+
+def test_navigation_stack_requires_an_environment_profile() -> None:
+    class InvalidEnvironment(FakeEnvironment):
+        profile = None
+
+    with pytest.raises(HarnessError, match="must declare a NavigationProfile"):
+        NavigationStack(LoopAgent(), InvalidEnvironment())
+
+
+def test_navigation_stack_validates_vln_tool_ownership() -> None:
+    class InvalidVLN:
+        required_tools = frozenset({"nav.stop"})
+        requirements = {}
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+            return ()
+
+        async def stop(self, reason):
+            del reason
+
+    with pytest.raises(HarnessError, match="cannot require agent-owned nav.stop"):
+        NavigationStack(LoopAgent(), FakeEnvironment(), vln=InvalidVLN())
+
+
+def test_navigation_stack_requires_immutable_tool_declarations() -> None:
+    class InvalidMemory:
+        required_tools = {"nav.observe"}
+
+        async def start(self, nav_task, tools):
+            del nav_task, tools
+            return ()
+
+        async def stop(self, reason):
+            del reason
+
+    with pytest.raises(HarnessError, match="required_tools must be a frozenset"):
+        NavigationStack(LoopAgent(), FakeEnvironment(), memory=InvalidMemory())
 
 
 def test_agent_owns_complete_navigation_loop() -> None:

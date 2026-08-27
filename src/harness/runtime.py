@@ -224,6 +224,13 @@ class NavigationHarness:
         terminal_task: asyncio.Task[bool] | None = None
         propagate_cancel = False
         try:
+            if stack.vln is not None and stack.vln.requirements:
+                check_navigation_requirements(
+                    type(stack.vln).__name__,
+                    stack.vln.requirements,
+                    stack.environment.profile,
+                )
+
             started.append("environment")
             environment_tools = await stack.environment.start(task)
             bus.register(environment_tools)
@@ -236,18 +243,6 @@ class NavigationHarness:
                 bus.register(memory_bindings)
 
             if stack.vln is not None:
-                requirements = getattr(stack.vln, "requirements", {})
-                if requirements:
-                    profile = getattr(stack.environment, "profile", None)
-                    if profile is None:
-                        raise HarnessError(
-                            f"{type(stack.environment).__name__} does not declare a navigation profile"
-                        )
-                    check_navigation_requirements(
-                        type(stack.vln).__name__, requirements, profile
-                    )
-                if "nav.stop" in stack.vln.required_tools:
-                    raise HarnessError("VLNNavigator cannot require agent-owned nav.stop")
                 bus.require(type(stack.vln).__name__, stack.vln.required_tools)
                 vln_tools = bus.client("vln", stack.vln.required_tools)
                 started.append("vln")
@@ -332,11 +327,12 @@ class NavigationHarness:
         final_terminal = terminal.value or Terminal(
             "failed", "task ended without terminal state", "harness"
         )
-        try:
-            environment_result = stack.environment.result()
-        except Exception as error:
-            cleanup_errors.append(f"result: {type(error).__name__}: {error}")
-            environment_result = {}
+        environment_result: JsonObject = {}
+        if "environment" in started:
+            try:
+                environment_result = stack.environment.result()
+            except Exception as error:
+                cleanup_errors.append(f"result: {type(error).__name__}: {error}")
         return NavigationResult(
             execution_id=execution_id,
             task_id=task.task_id,

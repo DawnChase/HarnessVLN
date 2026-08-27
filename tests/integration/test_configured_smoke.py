@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from benches.dummy import DummyBenchmark
+from envs import DummyNavigationEnvironment
 from harness.app import execute_runner
 
 
@@ -22,6 +23,41 @@ class PartiallyInvalidMetricBenchmark(DummyBenchmark):
         if case.case_id == "invalid":
             return {"success": float("nan")}
         return super().score(case, result)
+
+
+class InvalidConfiguredAgent:
+    required_tools = frozenset()
+
+
+class StopConfiguredAgent:
+    required_tools = frozenset()
+
+    async def run(self, context):
+        await context.nav.stop("completed")
+
+
+class TrackingDummyEnvironment(DummyNavigationEnvironment):
+    total_start_calls = 0
+
+    async def start(self, task):
+        type(self).total_start_calls += 1
+        return await super().start(task)
+
+
+_configured_agent_calls = 0
+
+
+def partially_invalid_agent():
+    global _configured_agent_calls
+    _configured_agent_calls += 1
+    return InvalidConfiguredAgent() if _configured_agent_calls == 1 else StopConfiguredAgent()
+
+
+def tracking_dummy_environment(episode):
+    return TrackingDummyEnvironment(
+        episode.setup.get("goal_stream", (episode.task.goal,)),
+        targets=episode.setup.get("targets", (0,)),
+    )
 
 
 def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
@@ -200,3 +236,56 @@ def test_invalid_metric_is_isolated_before_manifest_aggregation(tmp_path) -> Non
     assert serialized_completed["metrics"] == {"success": 1.0}
     assert document["benchmarks"][0]["aggregate_metrics"] == {"success": 1.0}
     assert document["aggregate_metrics"] == {"success": 1.0}
+
+
+def test_invalid_plugin_contract_is_a_stack_error_without_starting_env(tmp_path) -> None:
+    global _configured_agent_calls
+    _configured_agent_calls = 0
+    TrackingDummyEnvironment.total_start_calls = 0
+
+    environment = tmp_path / "tracking-env.yaml"
+    environment.write_text(
+        "environment:\n"
+        f"  factory: {__name__}:tracking_dummy_environment\n"
+    )
+    benchmark = tmp_path / "partially-invalid-stack-bench.yaml"
+    benchmark.write_text(
+        "benchmark:\n"
+        "  factory: benches.dummy:DummyBenchmark\n"
+        "  params:\n"
+        "    split: fixture\n"
+        "    cases:\n"
+        "      - {task_id: invalid, instruction: Stay., target: 0}\n"
+        "      - {task_id: valid, instruction: Stay., target: 0}\n"
+        f"  environment: {environment}\n"
+    )
+    runner = tmp_path / "partially-invalid-stack-runner.yaml"
+    runner.write_text(
+        "runner:\n"
+        f"  benches: [{benchmark}]\n"
+        "  task_parallelism: 1\n"
+        f"output:\n  root: {tmp_path / 'partially-invalid-stack-run'}\n"
+    )
+    agent = tmp_path / "partially-invalid-agent.yaml"
+    agent.write_text(
+        "agent:\n"
+        f"  factory: {__name__}:partially_invalid_agent\n"
+    )
+
+    run_summary, manifest = asyncio.run(execute_runner(runner, agent))
+    failed, completed = run_summary.benchmarks[0].records
+    document = json.loads(manifest.read_text())
+    serialized_failed, serialized_completed = document["benchmarks"][0]["records"]
+
+    assert failed.error_stage == "stack"
+    assert failed.result is None
+    assert failed.error is not None and "InvalidConfiguredAgent" in failed.error
+    assert completed.error is None
+    assert completed.result is not None
+    assert completed.result.terminal.status == "completed"
+    assert completed.metrics == {"success": 1.0}
+    assert TrackingDummyEnvironment.total_start_calls == 1
+    assert serialized_failed["error_stage"] == "stack"
+    assert serialized_failed["terminal"] is None
+    assert serialized_completed["error_stage"] is None
+    assert serialized_completed["terminal"]["status"] == "completed"
