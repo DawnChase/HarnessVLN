@@ -9,7 +9,7 @@ from benches.base import BenchmarkCase
 from envs import DummyNavigationEnvironment
 from harness import NavigationHarness, NavigationStack
 from harness.errors import HarnessError
-from harness.runner import BenchmarkExecutor
+from harness.runner import BenchmarkExecutor, CaseRecord
 from schemas import EnvironmentEpisode, NavGoal, NavTask
 
 
@@ -162,9 +162,59 @@ def test_single_case_factory_failure_does_not_cancel_siblings() -> None:
         assert summary.records[0].result is not None
         assert summary.records[1].result is None
         assert summary.records[1].error == "ValueError: bad fixture"
+        assert summary.records[1].error_stage == "stack"
         assert summary.records[2].result is not None
 
     asyncio.run(scenario())
+
+
+def test_case_execution_failure_is_classified_before_scoring() -> None:
+    class FailingHarness:
+        async def run_task(self, task, stack):
+            del task, stack
+            raise RuntimeError("execution failed")
+
+    async def scenario():
+        summary = await BenchmarkExecutor(FailingHarness()).run(
+            CasesBenchmark(1), stack_for
+        )
+
+        record = summary.records[0]
+        assert record.result is None
+        assert record.metrics == {}
+        assert record.error == "RuntimeError: execution failed"
+        assert record.error_stage == "execution"
+
+    asyncio.run(scenario())
+
+
+def test_score_failure_preserves_navigation_result_and_audit() -> None:
+    class BrokenScoreBenchmark(CasesBenchmark):
+        def score(self, case, result):
+            del case, result
+            raise ValueError("score failed")
+
+    async def scenario():
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
+            BrokenScoreBenchmark(1), stack_for
+        )
+
+        record = summary.records[0]
+        assert record.result is not None
+        assert record.result.terminal.status == "completed"
+        assert record.result.audit[-1].name == "nav.stop"
+        assert record.metrics == {}
+        assert record.error == "ValueError: score failed"
+        assert record.error_stage == "score"
+
+    asyncio.run(scenario())
+
+
+def test_case_record_requires_error_and_stage_together() -> None:
+    with pytest.raises(ValueError, match="must be set together"):
+        CaseRecord(0, "case", None, {}, error="RuntimeError: failed")
+    with pytest.raises(ValueError, match="must be set together"):
+        CaseRecord(0, "case", None, {}, error_stage="score")
 
 
 def test_runner_only_exposes_environment_episode_to_stack_factory() -> None:

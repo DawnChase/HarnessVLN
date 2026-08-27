@@ -72,7 +72,14 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
                 "contract",
                 (
                     CaseRecord(0, "task-failure", _result("failed"), {}),
-                    CaseRecord(1, "case-error", None, {}, "RuntimeError: failed"),
+                    CaseRecord(
+                        1,
+                        "case-error",
+                        None,
+                        {},
+                        error="RuntimeError: failed",
+                        error_stage="execution",
+                    ),
                     CaseRecord(
                         2,
                         "cleanup-error",

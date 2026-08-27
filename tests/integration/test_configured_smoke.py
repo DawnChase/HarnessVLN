@@ -4,10 +4,17 @@ import asyncio
 import json
 from pathlib import Path
 
+from benches.dummy import DummyBenchmark
 from harness.app import execute_runner
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class ScoreFailureBenchmark(DummyBenchmark):
+    def score(self, case, result):
+        del case, result
+        raise RuntimeError("fixture scoring failed")
 
 
 def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
@@ -33,6 +40,7 @@ def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
     assert document["config_digest"]
     assert document["provenance"]["simulator"] == "dummy"
     records = document["benchmarks"][0]["records"]
+    assert all(record["error_stage"] is None for record in records)
     assert all(record["terminal"]["actor"] == "agent" for record in records)
     assert all(record["audit"][-1]["name"] == "nav.stop" for record in records)
 
@@ -102,3 +110,38 @@ def test_runner_isolates_one_bench_construction_failure(tmp_path) -> None:
     assert document["benchmarks"][0]["records"] == []
     assert document["benchmarks"][1]["error"] is None
     assert len(document["benchmarks"][1]["records"]) == 2
+
+
+def test_score_failure_manifest_retains_execution_evidence(tmp_path) -> None:
+    benchmark = tmp_path / "score-failure-bench.yaml"
+    benchmark.write_text(
+        "benchmark:\n"
+        f"  factory: {__name__}:ScoreFailureBenchmark\n"
+        "  params:\n"
+        "    split: fixture\n"
+        "    cases:\n"
+        "      - {task_id: scored, instruction: Stay., target: 0}\n"
+        f"  environment: {ROOT / 'config/envs/dummy.yaml'}\n"
+    )
+    runner = tmp_path / "score-failure-runner.yaml"
+    runner.write_text(
+        "runner:\n"
+        f"  benches: [{benchmark}]\n"
+        "  task_parallelism: 1\n"
+        f"output:\n  root: {tmp_path / 'score-failure-run'}\n"
+    )
+
+    run_summary, manifest = asyncio.run(
+        execute_runner(runner, ROOT / "config/agents/passthrough.yaml")
+    )
+    record = run_summary.benchmarks[0].records[0]
+    document = json.loads(manifest.read_text())
+    serialized = document["benchmarks"][0]["records"][0]
+
+    assert record.result is not None
+    assert record.error_stage == "score"
+    assert serialized["error_stage"] == "score"
+    assert serialized["terminal"]["status"] == "completed"
+    assert serialized["environment"]["position"] == 0
+    assert serialized["audit"][-1]["name"] == "nav.stop"
+    assert serialized["metrics"] == {}

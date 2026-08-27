@@ -400,6 +400,7 @@ def _record_document(record: CaseRecord) -> dict[str, Any]:
         "index": record.index,
         "case_id": record.case_id,
         "error": record.error,
+        "error_stage": record.error_stage,
         "metrics": dict(record.metrics),
         "execution_id": record.result.execution_id if record.result else None,
         "terminal": asdict(record.result.terminal) if record.result else None,

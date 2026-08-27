@@ -5,6 +5,7 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from itertools import islice
+from typing import Literal
 
 from benches.base import Benchmark, BenchmarkCase, MetricSet
 from harness.contracts import NavigationStack
@@ -14,6 +15,7 @@ from schemas import EnvironmentEpisode
 
 
 StackFactory = Callable[[EnvironmentEpisode], NavigationStack]
+CaseErrorStage = Literal["stack", "execution", "score"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +25,11 @@ class CaseRecord:
     result: NavigationResult | None
     metrics: MetricSet
     error: str | None = None
+    error_stage: CaseErrorStage | None = None
+
+    def __post_init__(self) -> None:
+        if (self.error is None) != (self.error_stage is None):
+            raise ValueError("error and error_stage must be set together")
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,20 +91,11 @@ class BenchmarkExecutor:
                     if item is None:
                         return
                     index, case = item
-                    try:
-                        stack = stack_factory(case.environment_episode)
-                        result = await self.harness.run_task(case.task, stack)
-                        metrics = benchmark.score(case, result)
-                        record = CaseRecord(index, case.case_id, result, metrics)
-                    except Exception as error:
-                        record = CaseRecord(
-                            index,
-                            case.case_id,
-                            None,
-                            {},
-                            f"{type(error).__name__}: {error}",
+                    records.append(
+                        await self._execute_case(
+                            index, case, benchmark, stack_factory
                         )
-                    records.append(record)
+                    )
 
             producer = asyncio.create_task(produce(), name="benchmark-producer")
             workers = [
@@ -141,6 +139,29 @@ class BenchmarkExecutor:
             raise AssertionError("benchmark run completed without a summary")
         return replace(summary, cleanup_errors=tuple(cleanup_errors))
 
+    async def _execute_case(
+        self,
+        index: int,
+        case: BenchmarkCase,
+        benchmark: Benchmark,
+        stack_factory: StackFactory,
+    ) -> CaseRecord:
+        try:
+            stack = stack_factory(case.environment_episode)
+        except Exception as error:
+            return _failed_case(index, case, "stack", error)
+
+        try:
+            result = await self.harness.run_task(case.task, stack)
+        except Exception as error:
+            return _failed_case(index, case, "execution", error)
+
+        try:
+            metrics = benchmark.score(case, result)
+        except Exception as error:
+            return _failed_case(index, case, "score", error, result=result)
+        return CaseRecord(index, case.case_id, result, metrics)
+
 
 def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> None:
     message = _error_text(cleanup)
@@ -156,3 +177,21 @@ def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> Non
 
 def _error_text(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"
+
+
+def _failed_case(
+    index: int,
+    case: BenchmarkCase,
+    stage: CaseErrorStage,
+    error: Exception,
+    *,
+    result: NavigationResult | None = None,
+) -> CaseRecord:
+    return CaseRecord(
+        index=index,
+        case_id=case.case_id,
+        result=result,
+        metrics={},
+        error=_error_text(error),
+        error_stage=stage,
+    )
