@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 
 from harness import cli
@@ -101,3 +102,27 @@ def test_cli_returns_nonzero_and_separates_failure_kinds(
     assert capsys.readouterr().out.splitlines()[0] == (
         "bench/split: 3 cases, 1 task failures, 1 runner errors, 1 cleanup errors"
     )
+
+
+def test_env_cli_sends_instructions_to_the_agent_until_quit(
+    monkeypatch, capsys
+) -> None:
+    commands = iter(("Stay at the marker.", "quit"))
+    monkeypatch.setattr(builtins, "input", lambda prompt: next(commands))
+
+    assert (
+        cli.main(
+            [
+                "env",
+                "--environment",
+                "config/envs/dummy.yaml",
+                "--agent",
+                "config/agents/passthrough.yaml",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out.strip()
+    assert output.startswith("interactive:")
+    assert output.endswith("completed: all navigation goals completed")

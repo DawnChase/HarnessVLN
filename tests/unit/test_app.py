@@ -5,7 +5,11 @@ import sys
 
 import pytest
 
-from harness.app import ConfiguredStackFactory, _stack_factory
+from harness.app import (
+    ConfiguredStackFactory,
+    InteractiveNavigationSession,
+    _stack_factory,
+)
 from harness.config import (
     ComponentSpec,
     load_agent_config,
@@ -47,6 +51,30 @@ def test_agent_and_memory_fragments_create_independent_plugins() -> None:
     assert type(stack.memory).__name__ == "DummyLandmarkMemory"
     assert factory.requires_serial is True
     assert "spatial.search" in stack.agent.required_tools
+
+
+def test_interactive_session_turns_each_instruction_into_an_agent_owned_task() -> None:
+    async def scenario():
+        session = InteractiveNavigationSession.from_configs(
+            "config/envs/dummy.yaml", "config/agents/passthrough.yaml"
+        )
+
+        first = await session.navigate("Stay at the marker.")
+        second = await session.navigate("Confirm the marker again.")
+        await session.close()
+        await session.close()
+
+        assert first.task_id != second.task_id
+        assert first.terminal.status == "completed"
+        assert first.terminal.actor == "agent"
+        assert [event.name for event in first.audit][-2:] == [
+            "nav.goal.finish",
+            "nav.stop",
+        ]
+        with pytest.raises(HarnessError, match="session is closed"):
+            await session.navigate("Run after close.")
+
+    asyncio.run(scenario())
 
 
 def test_run_scoped_vln_is_shared_and_forces_serial_tasks(tmp_path) -> None:

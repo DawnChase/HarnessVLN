@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -18,14 +19,15 @@ from harness.config import (
     EnvironmentConfig,
     RunnerConfig,
     load_agent_config,
+    load_environment_config,
     load_runner_config,
     overlay,
 )
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
 from harness.runner import BenchRunner, CaseRecord, RunSummary, SuiteSummary
-from harness.runtime import NavigationHarness
-from schemas import EnvironmentEpisode
+from harness.runtime import NavigationHarness, NavigationResult
+from schemas import EnvironmentEpisode, NavGoal, NavTask
 
 
 @dataclass(slots=True)
@@ -114,6 +116,61 @@ class ConfiguredStackFactory:
         if self._run_vln is navigator:
             self._run_vln = None
             self._close_task = None
+
+
+@dataclass(slots=True)
+class InteractiveNavigationSession:
+    environment: EnvironmentConfig
+    agent: AgentConfig
+    harness: NavigationHarness = field(default_factory=NavigationHarness)
+    _factory: ConfiguredStackFactory = field(init=False, repr=False)
+    _session_id: str = field(
+        init=False, default_factory=lambda: uuid.uuid4().hex[:12], repr=False
+    )
+    _task_index: int = field(init=False, default=0, repr=False)
+    _closed: bool = field(init=False, default=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._factory = _stack_factory(self.agent, self.environment)
+
+    @classmethod
+    def from_configs(
+        cls, environment_path: str | Path, agent_path: str | Path
+    ) -> "InteractiveNavigationSession":
+        return cls(
+            load_environment_config(environment_path),
+            load_agent_config(agent_path),
+        )
+
+    async def navigate(self, instruction: str) -> NavigationResult:
+        if self._closed:
+            raise HarnessError("interactive navigation session is closed")
+        instruction = instruction.strip()
+        if not instruction:
+            raise HarnessError("navigation instruction must not be empty")
+        self._task_index += 1
+        task_id = f"interactive:{self._session_id}:{self._task_index}"
+        options = self.environment.interactive
+        goal = NavGoal(
+            f"{task_id}:goal:0",
+            instruction,
+            str(options.get("goal_modality", "language")),
+            dict(options.get("goal_public", {})),
+        )
+        task = NavTask(
+            task_id,
+            goal,
+            scene_id=options.get("scene_id"),
+            public=dict(options.get("task_public", {})),
+        )
+        episode = EnvironmentEpisode(task, dict(options.get("setup", {})))
+        return await self.harness.run_task(task, self._factory(episode))
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await self._factory.close_run()
 
 
 async def run_config(

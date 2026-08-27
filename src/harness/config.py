@@ -53,7 +53,17 @@ ENVIRONMENT_CONFIG_SCHEMA = {
     "type": "object",
     "properties": {
         "environment": _component_schema(),
-        "interactive": {"type": "object"},
+        "interactive": {
+            "type": "object",
+            "properties": {
+                "scene_id": {"type": ["string", "null"]},
+                "setup": {"type": "object"},
+                "task_public": {"type": "object"},
+                "goal_public": {"type": "object"},
+                "goal_modality": {"type": "string", "minLength": 1},
+            },
+            "additionalProperties": False,
+        },
         "provenance": {"type": "object"},
     },
     "required": ["environment"],
