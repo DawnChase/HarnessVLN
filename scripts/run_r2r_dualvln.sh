@@ -13,5 +13,9 @@ cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT/src"
 
 python -m harness.cli \
-  "$BENCH_CONFIG" "$AGENT_CONFIG" "$ENV_CONFIG" "$DUAL_ENV_CONFIG" \
-  "$VLN_CONFIG" "$RUN_CONFIG"
+  --benchmark "$BENCH_CONFIG" \
+  --agent "$AGENT_CONFIG" \
+  --environment "$ENV_CONFIG" \
+  --environment "$DUAL_ENV_CONFIG" \
+  --vln "$VLN_CONFIG" \
+  --run "$RUN_CONFIG"

@@ -1,0 +1,3 @@
+stack:
+  environment:
+    factory: envs.dummy:from_case

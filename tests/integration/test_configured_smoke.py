@@ -18,6 +18,9 @@ def test_yaml_to_batch_manifest_smoke(tmp_path) -> None:
         run_config(
             (
                 ROOT / "config/benches/dummy.yaml",
+                ROOT / "config/agents/passthrough.yaml",
+                ROOT / "config/envs/dummy.yaml",
+                ROOT / "config/vln/dummy.yaml",
                 ROOT / "config/runs/dummy_passthrough.yaml",
                 override,
             )

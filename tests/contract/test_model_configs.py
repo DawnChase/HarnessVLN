@@ -37,6 +37,8 @@ def test_vln_fragment_composes_with_run_and_benchmark(
     resolved = load_config(
         (
             ROOT / "config/benches/dummy.yaml",
+            ROOT / "config/agents/passthrough.yaml",
+            ROOT / "config/envs/dummy.yaml",
             ROOT / "config/runs/dummy_passthrough.yaml",
             ROOT / "config/vln" / fragment,
         )
@@ -60,9 +62,10 @@ def test_r2r_environment_composes_with_supported_vln(fragment: str) -> None:
     resolved = load_config(
         (
             ROOT / "config/benches/r2r_ce.yaml",
-            ROOT / "config/runs/dummy_passthrough.yaml",
+            ROOT / "config/agents/passthrough.yaml",
             ROOT / "config/envs/habitat_r2r.yaml",
             ROOT / "config/vln" / fragment,
+            ROOT / "config/runs/dummy_passthrough.yaml",
         )
     )
     case = BenchmarkCase(

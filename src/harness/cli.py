@@ -8,10 +8,9 @@ from harness.runner import RunSummary
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run a HarnessVLN benchmark")
-    parser.add_argument("configs", nargs="+", help="YAML files in overlay order")
+    parser = _build_parser()
     arguments = parser.parse_args(argv)
-    summary, manifest = run_config_sync(arguments.configs)
+    summary, manifest = run_config_sync(_config_paths(arguments))
     task_failures, runner_errors, cleanup_errors = _failure_counts(summary)
     print(
         f"{summary.benchmark}/{summary.split}: "
@@ -20,6 +19,72 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(manifest.resolve())
     return int(bool(task_failures or runner_errors or cleanup_errors))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m harness.cli",
+        description="Run a HarnessVLN benchmark",
+    )
+    configs = parser.add_argument_group("experiment components")
+    configs.add_argument(
+        "--benchmark",
+        required=True,
+        metavar="PATH",
+        help="benchmark case loader and scorer YAML",
+    )
+    configs.add_argument(
+        "--agent",
+        required=True,
+        metavar="PATH",
+        help="agent core YAML",
+    )
+    configs.add_argument(
+        "--environment",
+        required=True,
+        action="append",
+        metavar="PATH",
+        help="simulator or robot environment YAML; repeat for environment overlays",
+    )
+    configs.add_argument(
+        "--vln",
+        metavar="PATH",
+        help="optional VLN navigator YAML",
+    )
+    configs.add_argument(
+        "--memory",
+        metavar="PATH",
+        help="optional spatial memory YAML",
+    )
+    configs.add_argument(
+        "--run",
+        required=True,
+        metavar="PATH",
+        help="runner, output, and provenance YAML",
+    )
+    configs.add_argument(
+        "--overlay",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="final YAML overlay; repeat to apply multiple overrides in order",
+    )
+    return parser
+
+
+def _config_paths(arguments: argparse.Namespace) -> tuple[str, ...]:
+    paths = [
+        arguments.benchmark,
+        arguments.agent,
+        *arguments.environment,
+    ]
+    if arguments.vln is not None:
+        paths.append(arguments.vln)
+    if arguments.memory is not None:
+        paths.append(arguments.memory)
+    paths.append(arguments.run)
+    paths.extend(arguments.overlay)
+    return tuple(paths)
 
 
 def _failure_counts(summary: RunSummary) -> tuple[int, int, int]:

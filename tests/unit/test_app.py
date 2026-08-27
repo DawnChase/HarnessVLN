@@ -38,9 +38,11 @@ def test_agent_and_memory_fragments_create_independent_plugins() -> None:
     resolved = load_config(
         (
             "config/benches/dummy.yaml",
-            "config/runs/dummy_passthrough.yaml",
             "config/agents/subtask.yaml",
+            "config/envs/dummy.yaml",
+            "config/vln/dummy.yaml",
             "config/memory/dummy_landmark.yaml",
+            "config/runs/dummy_passthrough.yaml",
         )
     )
     factory = _stack_factory(resolved.data["stack"])
