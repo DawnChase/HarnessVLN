@@ -28,6 +28,7 @@ from harness.process_pool import (
     ProcessBenchmarkExecutor,
     build_device_slots,
 )
+from harness.progress import RunProgress
 from harness.runner import BenchmarkExecutor, BenchmarkSummary, RunSummary
 from harness.runtime import NavigationHarness, NavigationResult
 from schemas import EnvironmentEpisode, NavGoal, NavTask
@@ -231,7 +232,9 @@ async def execute_runner(
             f"{task_parallelism} > {len(device_slots)}"
         )
     device_pool = DevicePool(device_slots) if device_slots else None
+    max_cases = settings.get("max_cases")
     semaphore = asyncio.Semaphore(bench_parallelism)
+    progress = RunProgress()
     stack_factories = tuple(
         _stack_factory(agent_config, config.environment)
         for config in runner_config.benches
@@ -273,13 +276,17 @@ async def execute_runner(
                 bench_output = run_output.benchmark(
                     index, str(benchmark.name), str(benchmark.split)
                 )
+                progress.register(index, benchmark, max_cases)
                 if device_pool is None:
                     summary = await BenchmarkExecutor(harness).run(
                         benchmark,
                         stack_factories[index],
                         parallelism=task_parallelism,
-                        max_cases=settings.get("max_cases"),
+                        max_cases=max_cases,
                         output=bench_output,
+                        on_case_complete=lambda record: progress.advance(
+                            index, record
+                        ),
                     )
                 else:
                     if (
@@ -305,8 +312,11 @@ async def execute_runner(
                         ).run(
                             benchmark,
                             slots=leased,
-                            max_cases=settings.get("max_cases"),
+                            max_cases=max_cases,
                             output=bench_output,
+                            on_case_complete=lambda record: progress.advance(
+                                index, record
+                            ),
                         )
             except Exception as error:
                 summary = _failed_benchmark(config, benchmark, error)
@@ -318,9 +328,12 @@ async def execute_runner(
             bench_output.finish(summary.output_record())
             return index, summary
 
-    indexed = await asyncio.gather(
-        *(run_bench(index) for index in range(len(runner_config.benches)))
-    )
+    try:
+        indexed = await asyncio.gather(
+            *(run_bench(index) for index in range(len(runner_config.benches)))
+        )
+    finally:
+        progress.close()
     indexed.sort(key=lambda item: item[0])
     run_summary = RunSummary(tuple(summary for _, summary in indexed))
     manifest_path = run_output.finish(

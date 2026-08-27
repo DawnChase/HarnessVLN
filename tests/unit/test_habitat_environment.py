@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
+import sys
+from types import SimpleNamespace
 
 import numpy as np
 
 from benches.base import BenchmarkCase
 from envs.habitat import HabitatEnvironment, _rewrite_prefix, _same_scene
+from envs.habitat.environment import _quiet_habitat_loggers
 from harness import NavigationHarness, NavigationStack
 from harness.output import RunOutput
 from harness.requirements import check_navigation_requirements
@@ -44,6 +49,23 @@ class FakeHabitatSession:
             "compass": [0.5],
             "private_metric": 99,
         }
+
+
+def test_habitat_quieting_only_changes_module_loggers(monkeypatch) -> None:
+    habitat_logger = logging.Logger("fixture.habitat", logging.INFO)
+    simulator_logger = logging.Logger("fixture.habitat_sim", logging.INFO)
+    habitat = SimpleNamespace(logger=habitat_logger)
+    habitat_sim = SimpleNamespace(
+        logging=SimpleNamespace(logger=simulator_logger)
+    )
+    environment = dict(os.environ)
+    monkeypatch.setitem(sys.modules, "habitat_sim", habitat_sim)
+
+    _quiet_habitat_loggers(habitat)
+
+    assert habitat_logger.level == logging.ERROR
+    assert simulator_logger.level == logging.ERROR
+    assert dict(os.environ) == environment
 
 
 def compound_case() -> BenchmarkCase:

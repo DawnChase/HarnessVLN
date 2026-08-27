@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -368,6 +369,7 @@ def create_native_session(
         import habitat
     except ImportError as error:
         raise HarnessError("Habitat adapter requires habitat-lab and habitat-sim") from error
+    _quiet_habitat_loggers(habitat)
     loader = load_symbol(config_loader)
     config = loader(
         str(config_path),
@@ -422,10 +424,20 @@ def load_habitat_config(config_path: str, config_options: Sequence[Any]) -> Any:
 
     import habitat
 
+    _quiet_habitat_loggers(habitat)
     return habitat.get_config(
         config_path=config_path,
         overrides=[str(option) for option in config_options],
     )
+
+
+def _quiet_habitat_loggers(habitat: Any) -> None:
+    habitat.logger.setLevel(logging.ERROR)
+    try:
+        import habitat_sim
+    except ImportError:
+        return
+    habitat_sim.logging.logger.setLevel(logging.ERROR)
 
 
 def ensure_habitat_gym_compat() -> None:

@@ -5,6 +5,7 @@ import multiprocessing
 import os
 import queue
 import signal
+import sys
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -17,7 +18,12 @@ from benches.base import Benchmark, BenchmarkCase
 from harness.config import ComponentSpec
 from harness.errors import HarnessError
 from harness.output import BenchOutput, EpisodeOutput
-from harness.runner import BenchmarkSummary, CaseRecord, execute_case
+from harness.runner import (
+    BenchmarkSummary,
+    CaseCompleted,
+    CaseRecord,
+    execute_case,
+)
 from harness.runtime import NavigationHarness
 from harness.video import VideoSettings
 
@@ -87,6 +93,7 @@ class _WorkerConfig:
     shutdown_timeout_s: float
     run_dir: Path
     video: VideoSettings
+    worker_log: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +155,7 @@ class ProcessBenchmarkExecutor:
         slots: tuple[DeviceSlot, ...],
         max_cases: int | None,
         output: BenchOutput,
+        on_case_complete: CaseCompleted | None = None,
     ) -> BenchmarkSummary:
         if not slots:
             raise HarnessError("process benchmark execution requires GPU slots")
@@ -179,6 +187,8 @@ class ProcessBenchmarkExecutor:
         result_queue = context.Queue()
         request_queues: dict[int, Any] = {}
         processes: dict[int, BaseProcess] = {}
+        worker_log_dir = output.path / "logs"
+        worker_log_dir.mkdir(parents=True, exist_ok=True)
         try:
             for slot in slots:
                 requests = context.Queue(maxsize=1)
@@ -193,6 +203,10 @@ class ProcessBenchmarkExecutor:
                     shutdown_timeout_s=self.shutdown_timeout_s,
                     run_dir=output.run_dir,
                     video=output.video,
+                    worker_log=(
+                        worker_log_dir
+                        / f"worker-{slot.slot_id:03d}-gpu-{slot.physical_device}.log"
+                    ),
                 )
                 worker_process = context.Process(
                     target=_worker_entry,
@@ -225,6 +239,8 @@ class ProcessBenchmarkExecutor:
                 message = await _receive(result_queue, processes, done)
                 if isinstance(message, _WorkerRecord):
                     records.append(message.record)
+                    if on_case_complete is not None:
+                        on_case_complete(message.record)
                     following_job = next_job()
                     if following_job is None:
                         request_queues[message.slot_id].put(None)
@@ -351,9 +367,10 @@ def _worker_entry(config: _WorkerConfig, requests: Any, results: Any) -> None:
         os.setsid()
     except OSError:
         pass
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.slot.physical_device)
-    os.environ["HARNESS_WORKER_SLOT"] = str(config.slot.slot_id)
     try:
+        _redirect_worker_output(config.worker_log)
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(config.slot.physical_device)
+        os.environ["HARNESS_WORKER_SLOT"] = str(config.slot.slot_id)
         asyncio.run(_worker_loop(config, requests, results))
     except BaseException as error:
         results.put(
@@ -391,6 +408,7 @@ async def _worker_loop(config: _WorkerConfig, requests: Any, results: Any) -> No
                     "physical_device": config.slot.physical_device,
                     "local_device": config.slot.local_device,
                 },
+                "worker_log": str(config.worker_log.relative_to(config.run_dir)),
             }
             output = EpisodeOutput.open_existing(
                 job.output_path,
@@ -418,3 +436,23 @@ async def _worker_loop(config: _WorkerConfig, requests: Any, results: Any) -> No
             results.put(_WorkerFatal(config.slot.slot_id, fatal_error))
         else:
             results.put(_WorkerDone(config.slot.slot_id, cleanup_error))
+
+
+def _redirect_worker_output(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except (AttributeError, OSError):
+            pass
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        0o644,
+    )
+    try:
+        os.dup2(descriptor, 1)
+        os.dup2(descriptor, 2)
+    finally:
+        if descriptor > 2:
+            os.close(descriptor)

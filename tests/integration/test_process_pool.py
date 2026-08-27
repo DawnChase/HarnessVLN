@@ -17,7 +17,7 @@ def _read_json(path: Path):
 
 
 def test_runner_config_pins_episode_workers_to_distinct_devices(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capfd
 ) -> None:
     environment = tmp_path / "environment.yaml"
     environment.write_text(
@@ -73,6 +73,18 @@ def test_runner_config_pins_episode_workers_to_distinct_devices(
     assert {
         item["result"]["worker_pid"] for item in environments
     } == {item["resources"]["pid"] for item in results}
+    worker_logs = {
+        item["resources"]["worker_log"] for item in results
+    }
+    assert len(worker_logs) == 2
+    log_text = "".join(
+        (manifest.parent / path).read_text() for path in sorted(worker_logs)
+    )
+    assert "fixture Habitat scene switch stdout" in log_text
+    assert "fixture Habitat scene switch stderr" in log_text
+    terminal = capfd.readouterr()
+    assert "fixture Habitat scene switch" not in terminal.out
+    assert "fixture Habitat scene switch" not in terminal.err
     assert _read_json(manifest)["status"] == "completed"
 
 

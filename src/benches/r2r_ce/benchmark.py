@@ -18,6 +18,7 @@ class R2RCEBenchmark:
     def __init__(self, root: str | Path, *, split: str = "val_unseen") -> None:
         self.root = Path(root)
         self.split = split
+        self._episode_records: list[Any] | None = None
 
     @property
     def dataset_path(self) -> Path:
@@ -31,10 +32,7 @@ class R2RCEBenchmark:
         raise HarnessError(f"R2R-CE split file not found under {directory}")
 
     def cases(self) -> Iterable[BenchmarkCase]:
-        document = load_json(self.dataset_path)
-        if not isinstance(document, dict) or not isinstance(document.get("episodes"), list):
-            raise HarnessError(f"invalid R2R-CE document: {self.dataset_path}")
-        for raw in document["episodes"]:
+        for raw in self._episodes():
             require_fields(
                 raw,
                 {
@@ -70,6 +68,21 @@ class R2RCEBenchmark:
                 setup,
                 truth,
             )
+
+    @property
+    def case_count(self) -> int:
+        return len(self._episodes())
+
+    def _episodes(self) -> list[Any]:
+        if self._episode_records is not None:
+            return self._episode_records
+        document = load_json(self.dataset_path)
+        if not isinstance(document, dict) or not isinstance(
+            document.get("episodes"), list
+        ):
+            raise HarnessError(f"invalid R2R-CE document: {self.dataset_path}")
+        self._episode_records = document["episodes"]
+        return self._episode_records
 
     def score(self, case: BenchmarkCase, result: NavigationResult) -> MetricSet:
         environment = result.environment

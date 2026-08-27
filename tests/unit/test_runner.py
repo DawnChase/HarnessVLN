@@ -84,6 +84,22 @@ def test_runner_bounds_whole_task_concurrency_and_preserves_order() -> None:
     asyncio.run(scenario())
 
 
+def test_runner_reports_each_completed_case_once() -> None:
+    async def scenario():
+        completed = []
+        summary = await BenchmarkExecutor(NavigationHarness(timeout_s=1)).run(
+            CasesBenchmark(4),
+            stack_for,
+            parallelism=2,
+            on_case_complete=completed.append,
+        )
+
+        assert sorted(record.index for record in completed) == [0, 1, 2, 3]
+        assert len(completed) == len(summary.records)
+
+    asyncio.run(scenario())
+
+
 def test_runner_streams_cases_and_does_not_eagerly_consume_split() -> None:
     class State:
         produced = 0

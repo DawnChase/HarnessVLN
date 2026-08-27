@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 
 from envs.dummy import DummyNavigationEnvironment
 from schemas import EnvironmentEpisode
@@ -10,6 +11,8 @@ from schemas import EnvironmentEpisode
 class DeviceRecordingEnvironment(DummyNavigationEnvironment):
     async def start(self, task, output):
         self.cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+        print("fixture Habitat scene switch stdout", flush=True)
+        print("fixture Habitat scene switch stderr", file=sys.stderr, flush=True)
         await asyncio.sleep(0.05)
         return await super().start(task, output)
 

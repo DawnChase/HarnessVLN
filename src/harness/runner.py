@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 
 StackFactory = Callable[[EnvironmentEpisode], NavigationStack]
+CaseCompleted = Callable[["CaseRecord"], None]
 CaseErrorStage = Literal["stack", "execution", "score"]
 
 
@@ -165,6 +166,7 @@ class BenchmarkExecutor:
         parallelism: int = 1,
         max_cases: int | None = None,
         output: "BenchOutput | None" = None,
+        on_case_complete: CaseCompleted | None = None,
     ) -> BenchmarkSummary:
         benchmark_error: BaseException | None = None
         summary: BenchmarkSummary | None = None
@@ -196,11 +198,12 @@ class BenchmarkExecutor:
                     if item is None:
                         return
                     index, case = item
-                    records.append(
-                        await self._execute_case(
-                            index, case, benchmark, stack_factory, output
-                        )
+                    record = await self._execute_case(
+                        index, case, benchmark, stack_factory, output
                     )
+                    records.append(record)
+                    if on_case_complete is not None:
+                        on_case_complete(record)
 
             producer = asyncio.create_task(produce(), name="benchmark-producer")
             workers = [
