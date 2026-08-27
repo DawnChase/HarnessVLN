@@ -7,7 +7,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TRACE_ROOT = ROOT / "project-notes/traces"
+TRACE_ROOT = ROOT / "design/traces"
 pytestmark = pytest.mark.skipif(
     not TRACE_ROOT.is_dir(),
     reason="local real-run trace artifacts are not present",
