@@ -23,6 +23,11 @@ from harness.config import (
 from harness.contracts import NavigationStack
 from harness.errors import HarnessError
 from harness.output import RunOutput
+from harness.process_pool import (
+    DevicePool,
+    ProcessBenchmarkExecutor,
+    build_device_slots,
+)
 from harness.runner import BenchmarkExecutor, BenchmarkSummary, RunSummary
 from harness.runtime import NavigationHarness, NavigationResult
 from schemas import EnvironmentEpisode, NavGoal, NavTask
@@ -218,6 +223,14 @@ async def execute_runner(
         shutdown_timeout_s=float(settings.get("shutdown_timeout_s", 10)),
     )
     bench_parallelism = int(settings.get("bench_parallelism", 1))
+    task_parallelism = int(settings.get("task_parallelism", 1))
+    device_slots = build_device_slots(settings)
+    if device_slots and task_parallelism > len(device_slots):
+        raise HarnessError(
+            "runner.task_parallelism exceeds configured GPU worker slots: "
+            f"{task_parallelism} > {len(device_slots)}"
+        )
+    device_pool = DevicePool(device_slots) if device_slots else None
     semaphore = asyncio.Semaphore(bench_parallelism)
     stack_factories = tuple(
         _stack_factory(agent_config, config.environment)
@@ -260,13 +273,41 @@ async def execute_runner(
                 bench_output = run_output.benchmark(
                     index, str(benchmark.name), str(benchmark.split)
                 )
-                summary = await BenchmarkExecutor(harness).run(
-                    benchmark,
-                    stack_factories[index],
-                    parallelism=int(settings.get("task_parallelism", 1)),
-                    max_cases=settings.get("max_cases"),
-                    output=bench_output,
-                )
+                if device_pool is None:
+                    summary = await BenchmarkExecutor(harness).run(
+                        benchmark,
+                        stack_factories[index],
+                        parallelism=task_parallelism,
+                        max_cases=settings.get("max_cases"),
+                        output=bench_output,
+                    )
+                else:
+                    if (
+                        task_parallelism > 1
+                        and stack_factories[index].global_serial_reasons
+                    ):
+                        reasons = ", ".join(
+                            stack_factories[index].global_serial_reasons
+                        )
+                        raise HarnessError(
+                            "multi-process task execution conflicts with shared "
+                            f"resources: {reasons}"
+                        )
+                    async with device_pool.lease(task_parallelism) as leased:
+                        summary = await ProcessBenchmarkExecutor(
+                            agent=agent_config.core,
+                            environment=config.environment.component,
+                            vln=agent_config.vln,
+                            memory=agent_config.memory,
+                            benchmark=config.benchmark,
+                            timeout_s=harness.timeout_s,
+                            shutdown_timeout_s=harness.shutdown_timeout_s,
+                        ).run(
+                            benchmark,
+                            slots=leased,
+                            max_cases=settings.get("max_cases"),
+                            output=bench_output,
+                        )
             except Exception as error:
                 summary = _failed_benchmark(config, benchmark, error)
                 if bench_output is None:

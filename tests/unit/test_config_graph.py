@@ -162,6 +162,47 @@ def test_runner_requires_at_least_one_bench_reference(tmp_path: Path) -> None:
         load_runner_config(runner)
 
 
+def test_runner_loads_gpu_worker_pool_settings(tmp_path: Path) -> None:
+    runner = write(
+        tmp_path / "runner.yaml",
+        f"""
+runner:
+  benches: [{Path('config/benches/dummy.yaml').resolve()}]
+  devices: [0, 2]
+  workers_per_device: 2
+  task_parallelism: 4
+""",
+    )
+
+    config = load_runner_config(runner)
+
+    assert config.settings["devices"] == [0, 2]
+    assert config.settings["workers_per_device"] == 2
+    assert config.settings["task_parallelism"] == 4
+
+
+@pytest.mark.parametrize(
+    "settings",
+    (
+        "devices: [0, 0]",
+        "devices: [-1]",
+        "workers_per_device: 2",
+    ),
+)
+def test_runner_rejects_invalid_gpu_worker_pool_settings(
+    tmp_path: Path, settings: str
+) -> None:
+    runner = write(
+        tmp_path / "runner.yaml",
+        "runner:\n"
+        f"  benches: [{Path('config/benches/dummy.yaml').resolve()}]\n"
+        f"  {settings}\n",
+    )
+
+    with pytest.raises(HarnessError, match="invalid runner config"):
+        load_runner_config(runner)
+
+
 @pytest.mark.parametrize(
     ("kind", "document", "loader"),
     (

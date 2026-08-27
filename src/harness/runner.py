@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from itertools import islice
 from numbers import Real
 from typing import TYPE_CHECKING, Literal
@@ -32,6 +32,7 @@ class CaseRecord:
     error: str | None = None
     error_stage: CaseErrorStage | None = None
     output_errors: tuple[str, ...] = ()
+    resources: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if (self.error is None) != (self.error_stage is None):
@@ -46,7 +47,7 @@ class CaseRecord:
 
     def output_record(self) -> dict[str, object]:
         result = self.result
-        return {
+        record = {
             "schema_version": 1,
             "index": self.index,
             "case_id": self.case_id,
@@ -61,6 +62,9 @@ class CaseRecord:
             "cleanup_errors": list(result.cleanup_errors) if result else [],
             "output_errors": list(self.output_errors),
         }
+        if self.resources:
+            record["resources"] = dict(self.resources)
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +111,11 @@ class BenchmarkSummary:
                     "error_stage": record.error_stage,
                     "metrics": dict(record.metrics),
                     "output_errors": list(record.output_errors),
+                    **(
+                        {"resources": dict(record.resources)}
+                        if record.resources
+                        else {}
+                    ),
                 }
                 for record in self.records
             ],
@@ -248,35 +257,74 @@ class BenchmarkExecutor:
             if output is not None
             else None
         )
-        try:
-            stack = stack_factory(case.environment_episode)
-        except Exception as error:
-            return _finish_case_output(
-                _failed_case(index, case, "stack", error), episode_output
-            )
-
-        try:
-            if episode_output is None:
-                result = await self.harness.run_task(case.task, stack)
-            else:
-                result = await self.harness.run_task(
-                    case.task, stack, output=episode_output
-                )
-        except Exception as error:
-            return _finish_case_output(
-                _failed_case(index, case, "execution", error), episode_output
-            )
-
-        try:
-            metrics = _validate_metrics(benchmark.score(case, result))
-        except Exception as error:
-            return _finish_case_output(
-                _failed_case(index, case, "score", error, result=result),
-                episode_output,
-            )
-        return _finish_case_output(
-            CaseRecord(index, case.case_id, result, metrics), episode_output
+        return await execute_case(
+            self.harness,
+            index,
+            case,
+            benchmark,
+            stack_factory,
+            episode_output,
         )
+
+
+async def execute_case(
+    harness: NavigationHarness,
+    index: int,
+    case: BenchmarkCase,
+    benchmark: Benchmark,
+    stack_factory: StackFactory,
+    output: "EpisodeOutput | None" = None,
+    *,
+    resources: Mapping[str, object] | None = None,
+) -> CaseRecord:
+    resource_record = dict(resources or {})
+    try:
+        stack = stack_factory(case.environment_episode)
+    except Exception as error:
+        return _finish_case_output(
+            _failed_case(
+                index, case, "stack", error, resources=resource_record
+            ),
+            output,
+        )
+
+    try:
+        if output is None:
+            result = await harness.run_task(case.task, stack)
+        else:
+            result = await harness.run_task(case.task, stack, output=output)
+    except Exception as error:
+        return _finish_case_output(
+            _failed_case(
+                index, case, "execution", error, resources=resource_record
+            ),
+            output,
+        )
+
+    try:
+        metrics = _validate_metrics(benchmark.score(case, result))
+    except Exception as error:
+        return _finish_case_output(
+            _failed_case(
+                index,
+                case,
+                "score",
+                error,
+                result=result,
+                resources=resource_record,
+            ),
+            output,
+        )
+    return _finish_case_output(
+        CaseRecord(
+            index,
+            case.case_id,
+            result,
+            metrics,
+            resources=resource_record,
+        ),
+        output,
+    )
 
 
 def _attach_cleanup_error(primary: BaseException, cleanup: BaseException) -> None:
@@ -335,6 +383,7 @@ def _failed_case(
     error: Exception,
     *,
     result: NavigationResult | None = None,
+    resources: Mapping[str, object] | None = None,
 ) -> CaseRecord:
     return CaseRecord(
         index=index,
@@ -343,4 +392,5 @@ def _failed_case(
         metrics={},
         error=_error_text(error),
         error_stage=stage,
+        resources=dict(resources or {}),
     )

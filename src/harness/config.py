@@ -119,6 +119,13 @@ RUNNER_CONFIG_SCHEMA = {
                 },
                 "bench_parallelism": {"type": "integer", "minimum": 1},
                 "task_parallelism": {"type": "integer", "minimum": 1},
+                "devices": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "minItems": 1,
+                    "uniqueItems": True,
+                },
+                "workers_per_device": {"type": "integer", "minimum": 1},
                 "max_cases": {"type": "integer", "minimum": 1},
                 "timeout_s": {"type": "number", "exclusiveMinimum": 0},
                 "shutdown_timeout_s": {
@@ -129,6 +136,12 @@ RUNNER_CONFIG_SCHEMA = {
             },
             "required": ["benches"],
             "additionalProperties": False,
+            "allOf": [
+                {
+                    "if": {"required": ["workers_per_device"]},
+                    "then": {"required": ["devices"]},
+                }
+            ],
         },
         "output": {
             "type": "object",

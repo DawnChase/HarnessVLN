@@ -199,6 +199,24 @@ class EpisodeOutput:
         self._closed = False
         self.path.mkdir(parents=True, exist_ok=False)
 
+    @classmethod
+    def open_existing(
+        cls,
+        path: Path,
+        *,
+        run_dir: Path,
+        video: VideoSettings,
+    ) -> "EpisodeOutput":
+        if not path.is_dir():
+            raise HarnessError(f"episode output directory does not exist: {path}")
+        output = cls.__new__(cls)
+        output.path = path
+        output._run_dir = run_dir
+        output._video = video
+        output._modules = {}
+        output._closed = False
+        return output
+
     def module(self, name: str) -> ModuleOutput:
         if self._closed:
             raise HarnessError("episode output is closed")
@@ -266,6 +284,14 @@ class BenchOutput:
         }
         self.path.mkdir(parents=True, exist_ok=False)
         _atomic_json(self.path / "summary.json", self._summary)
+
+    @property
+    def run_dir(self) -> Path:
+        return self._run_dir
+
+    @property
+    def video(self) -> VideoSettings:
+        return self._video
 
     def episode(
         self,
