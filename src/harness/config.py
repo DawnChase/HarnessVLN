@@ -64,6 +64,163 @@ CONFIG_SCHEMA = {
 }
 
 
+def _component_schema(
+    extra_properties: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "factory": {"type": "string", "pattern": "^[^:]+:[^:]+$"},
+            "params": {"type": "object"},
+            "serial": {"type": "boolean"},
+            "scope": {"enum": ["task", "run"]},
+            **dict(extra_properties or {}),
+        },
+        "required": ["factory"],
+        "additionalProperties": False,
+    }
+
+
+_REFERENCE = {"type": ["string", "null"]}
+
+AGENT_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "agent": _component_schema(
+            {"vln": _REFERENCE, "memory": _REFERENCE}
+        ),
+        "provenance": {"type": "object"},
+    },
+    "required": ["agent"],
+    "additionalProperties": False,
+}
+
+ENVIRONMENT_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "environment": _component_schema(),
+        "interactive": {"type": "object"},
+        "provenance": {"type": "object"},
+    },
+    "required": ["environment"],
+    "additionalProperties": False,
+}
+
+VLN_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "vln": _component_schema(),
+        "provenance": {"type": "object"},
+    },
+    "required": ["vln"],
+    "additionalProperties": False,
+}
+
+MEMORY_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "memory": _component_schema(),
+        "provenance": {"type": "object"},
+    },
+    "required": ["memory"],
+    "additionalProperties": False,
+}
+
+BENCHMARK_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "benchmark": _component_schema(
+            {"environment": {"type": "string", "minLength": 1}}
+        ),
+        "provenance": {"type": "object"},
+    },
+    "required": ["benchmark"],
+    "additionalProperties": False,
+}
+
+RUNNER_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "runner": {
+            "type": "object",
+            "properties": {
+                "benches": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "bench_parallelism": {"type": "integer", "minimum": 1},
+                "task_parallelism": {"type": "integer", "minimum": 1},
+                "max_cases": {"type": "integer", "minimum": 1},
+                "timeout_s": {"type": "number", "exclusiveMinimum": 0},
+                "shutdown_timeout_s": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                },
+                "seed": {"type": "integer"},
+            },
+            "required": ["benches"],
+            "additionalProperties": False,
+        },
+        "output": {"type": "object"},
+        "provenance": {"type": "object"},
+    },
+    "required": ["runner"],
+    "additionalProperties": False,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentConfig:
+    component: "ComponentSpec"
+    interactive: Mapping[str, Any]
+    data: Mapping[str, Any]
+    sources: tuple[str, ...]
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class AgentConfig:
+    core: "ComponentSpec"
+    vln: "ComponentSpec | None"
+    memory: "ComponentSpec | None"
+    data: Mapping[str, Any]
+    sources: tuple[str, ...]
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkConfig:
+    benchmark: "ComponentSpec"
+    environment: EnvironmentConfig
+    data: Mapping[str, Any]
+    sources: tuple[str, ...]
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerConfig:
+    settings: Mapping[str, Any]
+    benches: tuple[BenchmarkConfig, ...]
+    output: Mapping[str, Any]
+    data: Mapping[str, Any]
+    sources: tuple[str, ...]
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ConfigDocument:
+    path: Path
+    data: dict[str, Any]
+    sources: tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedConfig:
     data: dict[str, Any]
@@ -108,6 +265,103 @@ class ComponentSpec:
             ) from error
 
 
+def load_agent_config(path: str | Path) -> AgentConfig:
+    document = _load_config_document(path, "agent")
+    agent_value = document.data["agent"]
+    component_value = _without_keys(agent_value, "vln", "memory")
+    vln_document = _load_optional_reference(agent_value.get("vln"), "vln")
+    memory_document = _load_optional_reference(
+        agent_value.get("memory"), "memory"
+    )
+    vln_value = vln_document.data["vln"] if vln_document else None
+    memory_value = memory_document.data["memory"] if memory_document else None
+    provenance = _merged_provenance(
+        *(item for item in (vln_document, memory_document, document) if item)
+    )
+    data = {
+        "agent": component_value,
+        "vln": vln_value,
+        "memory": memory_value,
+        "provenance": provenance,
+    }
+    sources = _ordered_sources(
+        document,
+        *(item for item in (vln_document, memory_document) if item),
+    )
+    return AgentConfig(
+        core=ComponentSpec.from_config(component_value),
+        vln=ComponentSpec.from_config(vln_value) if vln_value else None,
+        memory=ComponentSpec.from_config(memory_value) if memory_value else None,
+        data=data,
+        sources=sources,
+        digest=_config_digest(data),
+    )
+
+
+def load_environment_config(path: str | Path) -> EnvironmentConfig:
+    document = _load_config_document(path, "environment")
+    data = dict(document.data)
+    return EnvironmentConfig(
+        component=ComponentSpec.from_config(data["environment"]),
+        interactive=dict(data.get("interactive", {})),
+        data=data,
+        sources=document.sources,
+        digest=_config_digest(data),
+    )
+
+
+def load_benchmark_config(path: str | Path) -> BenchmarkConfig:
+    document = _load_config_document(path, "benchmark")
+    benchmark_value = document.data["benchmark"]
+    environment = load_environment_config(benchmark_value["environment"])
+    component_value = _without_keys(benchmark_value, "environment")
+    provenance = overlay(
+        environment.data.get("provenance", {}),
+        document.data.get("provenance", {}),
+    )
+    data = {
+        "benchmark": component_value,
+        "environment": dict(environment.data),
+        "provenance": provenance,
+    }
+    sources = _ordered_sources(document, environment)
+    return BenchmarkConfig(
+        benchmark=ComponentSpec.from_config(component_value),
+        environment=environment,
+        data=data,
+        sources=sources,
+        digest=_config_digest(data),
+    )
+
+
+def load_runner_config(path: str | Path) -> RunnerConfig:
+    document = _load_config_document(path, "runner")
+    runner_value = document.data["runner"]
+    benches = tuple(
+        load_benchmark_config(reference) for reference in runner_value["benches"]
+    )
+    settings = _without_keys(runner_value, "benches")
+    provenance: dict[str, Any] = {}
+    for bench in benches:
+        provenance = overlay(provenance, bench.data.get("provenance", {}))
+    provenance = overlay(provenance, document.data.get("provenance", {}))
+    output = dict(document.data.get("output", {}))
+    data = {
+        "runner": {**settings, "benches": [dict(bench.data) for bench in benches]},
+        "output": output,
+        "provenance": provenance,
+    }
+    sources = _ordered_sources(document, *benches)
+    return RunnerConfig(
+        settings=settings,
+        benches=benches,
+        output=output,
+        data=data,
+        sources=sources,
+        digest=_config_digest(data),
+    )
+
+
 def load_config(paths: Sequence[str | Path]) -> ResolvedConfig:
     if not paths:
         raise HarnessError("at least one YAML config path is required")
@@ -132,6 +386,128 @@ def load_config(paths: Sequence[str | Path]) -> ResolvedConfig:
     canonical = json.dumps(merged, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return ResolvedConfig(merged, tuple(sources), digest)
+
+
+_CONFIG_SCHEMAS = {
+    "agent": AGENT_CONFIG_SCHEMA,
+    "environment": ENVIRONMENT_CONFIG_SCHEMA,
+    "vln": VLN_CONFIG_SCHEMA,
+    "memory": MEMORY_CONFIG_SCHEMA,
+    "benchmark": BENCHMARK_CONFIG_SCHEMA,
+    "runner": RUNNER_CONFIG_SCHEMA,
+}
+
+
+def _load_optional_reference(
+    value: Any, kind: str
+) -> _ConfigDocument | None:
+    if value is None:
+        return None
+    return _load_config_document(str(value), kind)
+
+
+def _load_config_document(
+    raw_path: str | Path,
+    kind: str,
+    trail: tuple[Path, ...] = (),
+) -> _ConfigDocument:
+    path = Path(raw_path).expanduser().resolve()
+    if path in trail:
+        cycle = " -> ".join(str(item) for item in (*trail, path))
+        raise HarnessError(f"config extends cycle: {cycle}")
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise HarnessError(f"failed to load {kind} config {path}: {error}") from error
+    if not isinstance(loaded, Mapping):
+        raise HarnessError(f"{kind} config {path} must contain a mapping")
+    local = dict(loaded)
+    extends = local.pop("extends", None)
+    local = _normalize_references(kind, local, path)
+    sources: tuple[str, ...]
+    if extends is None:
+        data = local
+        sources = (str(path),)
+    else:
+        if not isinstance(extends, str) or not extends:
+            raise HarnessError(f"{kind} config {path} extends must be a path string")
+        base = _load_config_document(
+            _reference_path(path, extends), kind, (*trail, path)
+        )
+        data = overlay(base.data, local)
+        sources = (*base.sources, str(path))
+    try:
+        Draft202012Validator(_CONFIG_SCHEMAS[kind]).validate(data)
+    except ValidationError as error:
+        location = ".".join(str(item) for item in error.absolute_path) or "<root>"
+        raise HarnessError(
+            f"invalid {kind} config {path} at {location}: {error.message}"
+        ) from error
+    return _ConfigDocument(path, data, tuple(dict.fromkeys(sources)))
+
+
+def _normalize_references(
+    kind: str, data: Mapping[str, Any], owner: Path
+) -> dict[str, Any]:
+    value = dict(data)
+    if kind == "agent" and isinstance(value.get("agent"), Mapping):
+        component = dict(value["agent"])
+        for name in ("vln", "memory"):
+            reference = component.get(name)
+            if isinstance(reference, str):
+                component[name] = str(_reference_path(owner, reference))
+        value["agent"] = component
+    elif kind == "benchmark" and isinstance(value.get("benchmark"), Mapping):
+        component = dict(value["benchmark"])
+        reference = component.get("environment")
+        if isinstance(reference, str):
+            component["environment"] = str(_reference_path(owner, reference))
+        value["benchmark"] = component
+    elif kind == "runner" and isinstance(value.get("runner"), Mapping):
+        runner = dict(value["runner"])
+        references = runner.get("benches")
+        if isinstance(references, list):
+            runner["benches"] = [
+                str(_reference_path(owner, reference))
+                if isinstance(reference, str)
+                else reference
+                for reference in references
+            ]
+        value["runner"] = runner
+    return value
+
+
+def _reference_path(owner: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = owner.parent / path
+    return path.resolve()
+
+
+def _without_keys(value: Mapping[str, Any], *keys: str) -> dict[str, Any]:
+    excluded = frozenset(keys)
+    return {key: item for key, item in value.items() if key not in excluded}
+
+
+def _merged_provenance(*documents: _ConfigDocument) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for document in documents:
+        value = overlay(value, document.data.get("provenance", {}))
+    return value
+
+
+def _ordered_sources(*configs: Any) -> tuple[str, ...]:
+    sources: list[str] = []
+    for config in configs:
+        for source in config.sources:
+            if source not in sources:
+                sources.append(source)
+    return tuple(sources)
+
+
+def _config_digest(value: Mapping[str, Any]) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _validate_component_scopes(config: Mapping[str, Any]) -> None:
